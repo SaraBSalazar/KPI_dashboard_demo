@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+
+# Excel lock files
+~$*.xlsx
+
+# Dashboard auto-backups
+Data/*.backup-*.csv
+Data/*.backup-*.json
+
+# Generated/regenerable artifacts -- rebuilt wholesale on demand, so tracking them only
+# bloats history every time the data changes. Keep them on disk, just not in git.
+Share/*.html
+Dashboard/publish_snapshot.log
+Data/*.pptx

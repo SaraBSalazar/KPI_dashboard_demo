@@ -1,0 +1,158 @@
+{
+  "Shared Pipeline": [
+    {
+      "id": "e632c9ab",
+      "text": "Shared Pipeline: milestone 1",
+      "level": 0,
+      "done": true,
+      "start": "2025-01-01",
+      "due": "2025-01-30"
+    },
+    {
+      "id": "d76d7e1f",
+      "text": "Shared Pipeline: milestone 2",
+      "level": 0,
+      "done": false,
+      "start": "2025-01-31",
+      "due": "2025-02-20"
+    },
+    {
+      "id": "12cb387e",
+      "text": "Shared Pipeline: milestone 3",
+      "level": 0,
+      "done": false,
+      "start": "2025-02-21",
+      "due": "2025-04-05"
+    }
+  ],
+  "Hands-on Workshop": [
+    {
+      "id": "b1e65b60",
+      "text": "Hands-on Workshop: milestone 1",
+      "level": 0,
+      "done": true,
+      "start": "2025-05-01",
+      "due": "2025-05-30"
+    },
+    {
+      "id": "19b5603d",
+      "text": "Hands-on Workshop: milestone 2",
+      "level": 0,
+      "done": false,
+      "start": "2025-05-31",
+      "due": "2025-07-08"
+    },
+    {
+      "id": "8408a6b0",
+      "text": "Hands-on Workshop: milestone 3",
+      "level": 0,
+      "done": false,
+      "start": "2025-07-09",
+      "due": "2025-08-20"
+    }
+  ],
+  "Request Triage Tool": [
+    {
+      "id": "d7944c14",
+      "text": "Request Triage Tool: milestone 1",
+      "level": 0,
+      "done": true,
+      "start": "2025-01-01",
+      "due": "2025-02-12"
+    },
+    {
+      "id": "399c96a8",
+      "text": "Request Triage Tool: milestone 2",
+      "level": 0,
+      "done": false,
+      "start": "2025-02-13",
+      "due": "2025-03-13"
+    },
+    {
+      "id": "a2e47619",
+      "text": "Request Triage Tool: milestone 3",
+      "level": 0,
+      "done": false,
+      "start": "2025-03-14",
+      "due": "2025-04-14"
+    }
+  ],
+  "Template Library": [
+    {
+      "id": "a0a24acf",
+      "text": "Template Library: milestone 1",
+      "level": 0,
+      "done": true,
+      "start": "2025-02-01",
+      "due": "2025-03-10"
+    },
+    {
+      "id": "b2c3e287",
+      "text": "Template Library: milestone 2",
+      "level": 0,
+      "done": false,
+      "start": "2025-03-11",
+      "due": "2025-04-20"
+    }
+  ],
+  "OmicsXplorer": [
+    {
+      "id": "32ff1df9",
+      "text": "OmicsXplorer: milestone 1",
+      "level": 0,
+      "done": true,
+      "start": "2025-04-01",
+      "due": "2025-05-07"
+    },
+    {
+      "id": "ba0bef6d",
+      "text": "OmicsXplorer: milestone 2",
+      "level": 0,
+      "done": false,
+      "start": "2025-05-08",
+      "due": "2025-06-09"
+    },
+    {
+      "id": "123aab21",
+      "text": "OmicsXplorer: milestone 3",
+      "level": 0,
+      "done": false,
+      "start": "2025-06-10",
+      "due": "2025-06-30"
+    },
+    {
+      "id": "6ee4c653",
+      "text": "OmicsXplorer: milestone 4",
+      "level": 0,
+      "done": false,
+      "start": "2025-07-01",
+      "due": "2025-08-05"
+    }
+  ],
+  "Snippet Library": [
+    {
+      "id": "5d909a86",
+      "text": "Snippet Library: milestone 1",
+      "level": 0,
+      "done": true,
+      "start": "2025-03-01",
+      "due": "2025-03-30"
+    },
+    {
+      "id": "fa4958a6",
+      "text": "Snippet Library: milestone 2",
+      "level": 0,
+      "done": false,
+      "start": "2025-03-31",
+      "due": "2025-04-26"
+    },
+    {
+      "id": "f8c832c2",
+      "text": "Snippet Library: milestone 3",
+      "level": 0,
+      "done": false,
+      "start": "2025-04-27",
+      "due": "2025-06-08"
+    }
+  ]
+}

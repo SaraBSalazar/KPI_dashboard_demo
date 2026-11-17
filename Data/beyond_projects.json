@@ -1,0 +1,22 @@
+{
+  "2025": [
+    {
+      "title": "Guest lecture · Summer School",
+      "value": "~16 h in total",
+      "color": "#0B3C49",
+      "description": "16 h bioinformatics module for visiting students."
+    },
+    {
+      "title": "Pipeline outreach",
+      "value": "2",
+      "color": "#2A9D8F",
+      "description": "Pipeline showcased at 2 seminars · opened 1 new project."
+    },
+    {
+      "title": "Internal tools",
+      "value": "2",
+      "color": "#E76F51",
+      "description": "Two small internal helper scripts (personal use)."
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+# Visual theme for the KPI dashboard. Colors mirror the design tokens in kpi_data.py /
+# kpi_charts.py (and the snapshot CSS in export_snapshot.py) so the Streamlit chrome,
+# the Plotly charts, and the shared snapshot all read as one system.
+# Streamlit >= 1.49 supports separate [theme.light] / [theme.dark] sections; the viewer's
+# OS/browser preference (or the app-menu choice) picks between them, and the pages keep
+# re-theming their charts through st.context.theme.type exactly as before.
+
+[theme]
+font = "'IBM Plex Sans', 'Segoe UI', sans-serif"
+headingFont = "'IBM Plex Sans', 'Segoe UI', sans-serif"
+codeFont = "'IBM Plex Mono', monospace"
+baseRadius = "0.6rem"
+buttonRadius = "0.6rem"
+showSidebarBorder = true
+
+[theme.light]
+primaryColor = "#1f5c99"
+backgroundColor = "#fcfcfb"
+secondaryBackgroundColor = "#f3f2ec"
+textColor = "#0b0b0b"
+linkColor = "#1f5c99"
+borderColor = "#e1e0d9"
+dataframeBorderColor = "#e1e0d9"
+
+[theme.dark]
+primaryColor = "#4a84c9"
+backgroundColor = "#1a1a19"
+secondaryBackgroundColor = "#232321"
+textColor = "#f2f1ee"
+linkColor = "#4a84c9"
+borderColor = "#3c3b38"
+dataframeBorderColor = "#3c3b38"
