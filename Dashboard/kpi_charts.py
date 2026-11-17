@@ -1066,13 +1066,14 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
     meaningless, so this shows every project individually -- and it still reads at 20+ rows.
     Rows flagged as bad-date by lead_time_table are excluded (the caller reports them).
     When the rows carry time-log `gaps` (see kd.lead_time_table), each pause is drawn as a
-    muted segment over the working bar, with its note from `pause_notes`
+    gray segment over the working bar, with its note from `pause_notes`
     ({project: {gap-start ISO: {"note", "forgive"}}}) in the tooltip -- so a
     stopped-and-restarted project doesn't read as continuous work. A pause ticked
-    "forgive" draws faded + hatched, the same visual language as Internal, since
-    lead_time_summary excuses its days from the medians the same way. A `real_start`
-    (first week with logged hours) draws as a diamond on the row: when work *really*
-    began, before or after the tracker's start.
+    "forgive" is its own legend entry ("Paused (forgiven)") and draws hatched -- but the
+    same solid gray fill as a plain pause, not faded toward white the way Internal mutes
+    its (much more saturated) color, since lead_time_summary excuses its days from the
+    medians the same way. A `real_start` (first week with logged hours) draws as a
+    diamond on the row: when work *really* began, before or after the tracker's start.
     Internal projects draw faded + hatched across both stages -- the same visual language
     as an inherited wait, in blue rather than orange -- because lead_time_summary leaves
     them out of the medians.
@@ -1194,33 +1195,38 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
             ))
 
     if "gaps" in clean.columns:
-        # A pause ticked "forgive" (see kd.load_pause_notes) draws faded + hatched, same
-        # visual language as Internal, since lead_time_summary excuses its days from the
-        # medians the same way -- "forgiven" is already computed per-gap by
+        # A pause ticked "forgive" (see kd.load_pause_notes) draws hatched, as its own
+        # legend entry -- but still the same solid gray fill as a plain pause, not faded
+        # toward white the way Internal/Inherited mute their (much more saturated) colors:
+        # TL_BASELINE is already a pale, understated gray, so fading it further the same
+        # way would read as "this bar vanished," not "this bar is excused." The hatch
+        # lines alone are the signal here. "forgiven" is already computed per-gap by
         # kd.lead_time_table, so this only needs the note text for the tooltip.
-        g_labels, g_bases, g_x, g_text, g_colors, g_shapes = [], [], [], [], [], []
+        gaps_by_state = {False: [], True: []}
         for _, r in clean.iterrows():
             for g in (r["gaps"] or []):
                 forgiven = bool(g.get("forgiven"))
                 note = (pause_notes or {}).get(r["Project tag"], {}).get(
                     g["start"].date().isoformat(), {}).get("note", "")
-                g_labels.append(_wrap_label(r["Project tag"], 20))
-                g_bases.append(g["start"])
-                g_x.append(g["weeks"] * 7 * ms)
-                g_colors.append(_rgba(TL_BASELINE, 0.18) if forgiven else TL_BASELINE)
-                g_shapes.append("/" if forgiven else "")
-                g_text.append(f"<b>{r['Project tag']}</b>{desc_line(r.get('description'))}<br>"
-                              f"Paused {g['weeks']} week"
-                              f"{'' if g['weeks'] == 1 else 's'} — no hours logged<br>"
-                              f"{g['start'].strftime('%d %b %Y')} → {g['end'].strftime('%d %b %Y')}"
-                              + (f"<br><i>{note}</i>" if note else "")
-                              + ("<br><i>Forgiven — not counted in the medians</i>" if forgiven else ""))
-        if g_labels:
+                text = (f"<b>{r['Project tag']}</b>{desc_line(r.get('description'))}<br>"
+                        f"Paused {g['weeks']} week"
+                        f"{'' if g['weeks'] == 1 else 's'} — no hours logged<br>"
+                        f"{g['start'].strftime('%d %b %Y')} → {g['end'].strftime('%d %b %Y')}"
+                        + (f"<br><i>{note}</i>" if note else "")
+                        + ("<br><i>Forgiven — not counted in the medians</i>" if forgiven else ""))
+                gaps_by_state[forgiven].append(
+                    (_wrap_label(r["Project tag"], 20), g["start"], g["weeks"] * 7 * ms, text))
+
+        for forgiven, name, pattern_shape in ((False, "Paused", ""), (True, "Paused (forgiven)", "/")):
+            rows = gaps_by_state[forgiven]
+            if not rows:
+                continue
+            g_labels, g_bases, g_x, g_text = zip(*rows)
             fig.add_trace(go.Bar(
-                y=g_labels, base=g_bases, x=g_x, orientation="h", name="Paused",
-                marker=dict(color=g_colors, cornerradius=4, line=dict(color=TL_SURFACE, width=2),
-                            pattern=dict(shape=g_shapes, fgcolor=TL_BASELINE, solidity=0.3, size=7)),
-                hovertext=g_text, hoverinfo="text",
+                y=list(g_labels), base=list(g_bases), x=list(g_x), orientation="h", name=name,
+                marker=dict(color=TL_BASELINE, cornerradius=4, line=dict(color=TL_SURFACE, width=2),
+                            pattern=dict(shape=pattern_shape, fgcolor=TL_INK_MUTED, solidity=0.35, size=7)),
+                hovertext=list(g_text), hoverinfo="text",
             ))
 
     if "real_start" in clean.columns:
