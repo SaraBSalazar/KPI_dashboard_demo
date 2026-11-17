@@ -315,7 +315,7 @@ def build_time_log(projects):
     monday = year_start - timedelta(days=year_start.weekday())
     while monday <= year_end:
         active_tags = [t for t, (b, e) in project_windows.items() if b <= monday <= e]
-        if active_tags and random.random() < 0.15:
+        if active_tags and random.random() < 0.35:
             tag = random.choice(active_tags)
             hrs, mins = random.choice([1, 2, 3, 4]), random.choice([0, 0, 30])
             add_entry(monday, "Projects-Development", random.choice(["Tools", "AI Skills"]), tag, hrs, mins)
@@ -353,7 +353,7 @@ def build_time_log(projects):
 
 # --- 3) Special projects: ratings + task checklists ---------------------------------------
 SPECIAL_PROJECTS = [
-    ("01 - Reach more research groups", "Shared Pipeline", "Reusable multi-omics pipeline open to any group.",
+    ("01 - Reach more research groups", "Open Analysis Toolkit", "Reusable analysis toolkit open to any group.",
      "Easy to demo, clear visibility gain.", "Needs a stable place to be hosted.",
      "Could absorb more data types over time.", 2, 3, 1, 4),
     ("01 - Reach more research groups", "Hands-on Workshop", "Recurring workshop on common analysis patterns.",
@@ -364,9 +364,9 @@ SPECIAL_PROJECTS = [
     ("02 - Reduce turnaround time", "Template Library", "Standard report/figure templates per data type.",
      "Saves repeat setup work on similar projects.", "Templates drift if not kept up to date.",
      "Versioned templates with a changelog.", 1, 3, 2, 2),
-    ("03 - Build internal tooling", "OmicsXplorer", "Internal explorer for QC'd multi-omics datasets.",
+    ("03 - Build internal tooling", "Dataset Browser", "Internal explorer for QC'd analysis datasets.",
      "Centralizes what's otherwise scattered notebooks.", "Needs ongoing maintenance as formats change.",
-     "Could plug into the pipeline's output directly.", 3, 4, 3, 3),
+     "Could plug directly into the analysis workflow.", 3, 4, 3, 3),
     ("03 - Build internal tooling", "Snippet Library", "Curated, reusable code snippets for common tasks.",
      "Low effort, immediate reuse value.", "Only useful if people actually contribute back.",
      "Could become a small internal package.", 1, 2, 2, 1),
@@ -449,10 +449,10 @@ def build_beyond_projects():
 TOOLS = [
     ("QC Dashboard", "Adaptation of the internal pipeline into a facility-specific QC dashboard.",
      "Tool Dashboard", f"{YEAR}", "Facility", "User Project", "", "Could absorb more facility-specific checks."),
-    ("motif-finder-skill", "Interactive motif finder letting users pick genes and tweak output figures.",
+    ("variant-highlighter-skill", "Interactive variant highlighter letting users pick samples and tweak output figures.",
      "AI Skill", f"{YEAR}", "User", "User Project", "Limited sandbox network access.",
      "Faster deployment across more genome builds."),
-    ("metadata-normalizer-agent", "Turns user-submitted sample sheets into pipeline-ready standardized tables.",
+    ("intake-formatter-agent", "Turns user-submitted sample sheets into pipeline-ready standardized tables.",
      "AI Skill", f"{YEAR}", "Internal Team", "Internal pipeline tool", "Needs tighter dashboard integration.",
      "Cuts manual cleanup on recurring requests."),
     ("Report Builder", "Generates the standard PDF report from a project's tracked outputs.",
