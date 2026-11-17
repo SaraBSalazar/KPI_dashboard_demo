@@ -172,50 +172,115 @@ def build_project_tracker():
 
 
 # --- 2) Personal time log: Data/track_time.csv -------------------------------------------
-def build_time_log():
+NON_PROJECT_MAJOR_TASKS = {
+    "Meetings (non-project)": ["Internal Meeting", "External Meeting"],
+    "ADAorg": ["Internal org", "Burocracy", "Seminar"],
+    "Trainning": ["Trainning"],
+}
+PROJECT_MAJOR_TASKS = ["code", "Meetings/Comms", "ProjectOrg", "Report", "Review", "Plan/Study"]
+
+
+def _week_label(d):
+    """('January', '1st January') for the Monday `d` -- the ordinal matches
+    kpi_data.week_bounds's own Monday-of-the-month numbering, and only the leading
+    digit of the returned label is ever parsed back out of it."""
+    month_name = MONTHS[d.month - 1]
+    month_start = date(d.year, d.month, 1)
+    first_monday_offset = (7 - month_start.weekday()) % 7
+    first_monday = month_start + timedelta(days=first_monday_offset)
+    ordinal = (d - first_monday).days // 7 + 1 if d >= first_monday else 1
+    suffix = "st" if ordinal == 1 else "nd" if ordinal == 2 else "rd" if ordinal == 3 else "th"
+    return month_name, f"{ordinal}{suffix} {month_name}"
+
+
+def build_time_log(projects):
+    """Mostly-continuous weekly logging per project across its own Begining -> report/
+    today window (an occasional genuine pause, not one scattered into almost every week),
+    plus non-project categories spread evenly across the year. Generating hours
+    independently-per-week regardless of each project's own active window -- the first
+    version of this script did that -- produces a "paused" gap nearly everywhere once fed
+    through kpi_data.lead_time_table's gap detector, which doesn't resemble a real time
+    log at all."""
+    year_start, year_end = date(YEAR, 1, 1), date(YEAR, 12, 31)
+    today = date.today()
     rows = []
     entry_id = 1
-    d = date(YEAR, 1, 1)
-    # Monday-start weeks across the whole year
-    d -= timedelta(days=d.weekday())
-    while d.year <= YEAR:
-        if d > date(YEAR, 12, 31):
-            break
-        month_name = MONTHS[d.month - 1] if d.month <= 12 and d.year == YEAR else MONTHS[0]
-        # which Monday-of-the-month ordinal is this (1-based), matching kpi_data.week_bounds
-        month_start = date(d.year, d.month, 1)
-        first_monday_offset = (7 - month_start.weekday()) % 7
-        first_monday = month_start + timedelta(days=first_monday_offset)
-        ordinal = (d - first_monday).days // 7 + 1 if d >= first_monday else 1
-        if d.year != YEAR:
-            d += timedelta(days=7)
+
+    def add_entry(monday, category, major_task, tag, hrs, mins):
+        nonlocal entry_id
+        month_name, week_label = _week_label(monday)
+        rows.append({
+            "Entry": f"DEMO_{entry_id:03d}", "Agendo updated": random.choice(["Yes", "Yes", "Yes", "No"]),
+            "Category": category, "Hours (exact)": hrs + mins / 60, "Major task name (chart)": major_task,
+            "Hrs": hrs, "Min": mins, "Month": month_name, "Month and year (chart)": f"{month_name} {YEAR}",
+            "Notes": "", "Week": week_label, "Weekly entry name (chart)": tag, "Year": YEAR,
+            "Unnamed: 13": "",
+        })
+        entry_id += 1
+
+    project_windows = {}  # tag -> (begin_d, end_d), reused below to keep dev-side entries
+                           # from landing on a project before it's even begun
+
+    for _, p in projects.iterrows():
+        begin = p["Begining"]
+        if pd.isna(begin):
+            continue
+        begin_d = begin.date()
+        end_raw = p["Final Report Sent"] if pd.notna(p["Final Report Sent"]) else p["Closing Day"]
+        end_d = end_raw.date() if pd.notna(end_raw) else min(today, year_end)
+        end_d = min(max(end_d, begin_d), year_end)
+        project_windows[p["Project tag"]] = (begin_d, end_d)
+
+        monday = begin_d - timedelta(days=begin_d.weekday())
+        weeks = []
+        while monday <= end_d:
+            weeks.append(monday)
+            monday += timedelta(days=7)
+        if not weeks:
             continue
 
-        for _ in range(random.randint(2, 5)):
-            category = random.choices(CATEGORIES, weights=[45, 15, 20, 10, 10])[0]
-            major_task = random.choice(MAJOR_TASKS)
-            hrs = random.choice([0, 1, 2, 3, 4, 5, 6])
-            mins = random.choice([0, 0, 15, 30, 45])
-            project_tag = (random.choice(FAKE_PROJECT_TAGS) if category in
-                           ("Projects", "Projects-Development") else category)
-            rows.append({
-                "Entry": f"DEMO_{entry_id:03d}",
-                "Agendo updated": random.choice(["Yes", "Yes", "Yes", "No"]),
-                "Category": category,
-                "Hours (exact)": hrs + mins / 60,
-                "Major task name (chart)": major_task,
-                "Hrs": hrs,
-                "Min": mins,
-                "Month": month_name,
-                "Month and year (chart)": f"{month_name} {YEAR}",
-                "Notes": "",
-                "Week": f"{ordinal}{'st' if ordinal == 1 else 'nd' if ordinal == 2 else 'rd' if ordinal == 3 else 'th'} {month_name}",
-                "Weekly entry name (chart)": project_tag,
-                "Year": YEAR,
-                "Unnamed: 13": "",
-            })
-            entry_id += 1
-        d += timedelta(days=7)
+        # One genuine pause for a minority of long-enough projects -- a real 2-3 week
+        # stretch with nothing logged, strictly inside the span -- rather than a gap
+        # showing up almost everywhere.
+        pause = set()
+        if len(weeks) > 6 and random.random() < 0.25:
+            pause_len = min(random.randint(2, 3), len(weeks) - 5)
+            start_idx = random.randint(2, len(weeks) - pause_len - 2)
+            pause = set(range(start_idx, start_idx + pause_len))
+
+        for i, wk in enumerate(weeks):
+            if i in pause:
+                continue
+            if random.random() < 0.05:  # a rare single skipped week -- low enough that two in a
+                                         # row (which would itself read as a second "pause") stays rare
+                continue
+            for _ in range(random.randint(1, 2)):
+                hrs, mins = random.choice([1, 2, 2, 3, 4]), random.choice([0, 0, 15, 30])
+                add_entry(wk, "Projects", random.choice(PROJECT_MAJOR_TASKS), p["Project tag"], hrs, mins)
+
+    # A handful of Projects-Development entries (tool-building side work). Still tagged to
+    # a project tag (so it counts as that project's hours), but only to one already in its
+    # active window that week -- an entry logged before a project has even begun, or long
+    # after it closed, would read as its own multi-month "pause" either side of it.
+    monday = year_start - timedelta(days=year_start.weekday())
+    while monday <= year_end:
+        active_tags = [t for t, (b, e) in project_windows.items() if b <= monday <= e]
+        if active_tags and random.random() < 0.15:
+            tag = random.choice(active_tags)
+            hrs, mins = random.choice([1, 2, 3, 4]), random.choice([0, 0, 30])
+            add_entry(monday, "Projects-Development", random.choice(["Tools", "AI Skills"]), tag, hrs, mins)
+        monday += timedelta(days=7)
+
+    # Non-project categories: internal org, non-project meetings, training -- spread
+    # fairly evenly across the whole year, independent of any project's lifecycle.
+    monday = year_start - timedelta(days=year_start.weekday())
+    while monday <= year_end:
+        for _ in range(random.randint(1, 3)):
+            category = random.choices(list(NON_PROJECT_MAJOR_TASKS), weights=[50, 35, 15])[0]
+            major_task = random.choice(NON_PROJECT_MAJOR_TASKS[category])
+            hrs, mins = random.choice([0, 1, 1, 2]), random.choice([0, 0, 30])
+            add_entry(monday, category, major_task, category, hrs, mins)
+        monday += timedelta(days=7)
 
     df = pd.DataFrame(rows)
     path = DATA_DIR / "track_time.csv"
@@ -399,8 +464,8 @@ if __name__ == "__main__":
     if "--empty" in sys.argv:
         build_empty()
     else:
-        build_project_tracker()
-        build_time_log()
+        projects = build_project_tracker()
+        build_time_log(projects)
         build_special_projects()
         build_beyond_projects()
         build_tools()
