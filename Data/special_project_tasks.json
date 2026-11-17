@@ -1,50 +1,94 @@
 {
   "Shared Pipeline": [
     {
-      "id": "81fabb10",
+      "id": "38ce4fdd",
       "text": "Shared Pipeline: milestone 1",
       "level": 0,
-      "done": false,
-      "start": "2026-10-21",
-      "due": "2026-11-30"
+      "done": true,
+      "start": "2026-09-19",
+      "due": "2026-10-12"
     },
     {
-      "id": "39f1948d",
+      "id": "d771b7d0",
       "text": "Shared Pipeline: milestone 2",
       "level": 0,
       "done": false,
-      "start": "2026-12-01",
-      "due": "2027-01-10"
+      "start": "2026-10-13",
+      "due": "2026-11-15"
     },
     {
-      "id": "687f96cf",
+      "id": "f01947ac",
       "text": "Shared Pipeline: milestone 3",
       "level": 0,
       "done": false,
-      "start": "2027-01-11",
-      "due": "2027-02-06"
-    },
-    {
-      "id": "1dd01c5b",
-      "text": "Shared Pipeline: milestone 4",
-      "level": 0,
-      "done": false,
-      "start": "2027-02-07",
-      "due": "2027-03-09"
-    },
-    {
-      "id": "3987924b",
-      "text": "Shared Pipeline: milestone 5",
-      "level": 0,
-      "done": false,
-      "start": "2027-03-10",
-      "due": "2027-04-06"
+      "start": "2026-11-16",
+      "due": "2026-12-24"
     }
   ],
   "Hands-on Workshop": [
     {
-      "id": "a094f90f",
+      "id": "a0361579",
       "text": "Hands-on Workshop: milestone 1",
+      "level": 0,
+      "done": false,
+      "start": "2026-10-19",
+      "due": "2026-11-26"
+    },
+    {
+      "id": "2f29f3c0",
+      "text": "Hands-on Workshop: milestone 2",
+      "level": 0,
+      "done": false,
+      "start": "2026-11-27",
+      "due": "2026-12-27"
+    },
+    {
+      "id": "3711092e",
+      "text": "Hands-on Workshop: milestone 3",
+      "level": 0,
+      "done": false,
+      "start": "2026-12-28",
+      "due": "2027-02-06"
+    },
+    {
+      "id": "ecb38c5a",
+      "text": "Hands-on Workshop: milestone 4",
+      "level": 0,
+      "done": false,
+      "start": "2027-02-07",
+      "due": "2027-03-16"
+    }
+  ],
+  "Request Triage Tool": [
+    {
+      "id": "687f96cf",
+      "text": "Request Triage Tool: milestone 1",
+      "level": 0,
+      "done": true,
+      "start": "2026-09-26",
+      "due": "2026-11-05"
+    },
+    {
+      "id": "1dd01c5b",
+      "text": "Request Triage Tool: milestone 2",
+      "level": 0,
+      "done": false,
+      "start": "2026-11-06",
+      "due": "2026-12-06"
+    },
+    {
+      "id": "3987924b",
+      "text": "Request Triage Tool: milestone 3",
+      "level": 0,
+      "done": false,
+      "start": "2026-12-07",
+      "due": "2027-01-03"
+    }
+  ],
+  "Template Library": [
+    {
+      "id": "a094f90f",
+      "text": "Template Library: milestone 1",
       "level": 0,
       "done": true,
       "start": "2026-09-22",
@@ -52,7 +96,7 @@
     },
     {
       "id": "6b1b1728",
-      "text": "Hands-on Workshop: milestone 2",
+      "text": "Template Library: milestone 2",
       "level": 0,
       "done": false,
       "start": "2026-11-04",
@@ -60,7 +104,7 @@
     },
     {
       "id": "c700f37a",
-      "text": "Hands-on Workshop: milestone 3",
+      "text": "Template Library: milestone 3",
       "level": 0,
       "done": false,
       "start": "2026-12-12",
@@ -68,7 +112,7 @@
     },
     {
       "id": "4218ff37",
-      "text": "Hands-on Workshop: milestone 4",
+      "text": "Template Library: milestone 4",
       "level": 0,
       "done": false,
       "start": "2027-01-25",
@@ -76,17 +120,17 @@
     },
     {
       "id": "4702e964",
-      "text": "Hands-on Workshop: milestone 5",
+      "text": "Template Library: milestone 5",
       "level": 0,
       "done": false,
       "start": "2027-02-26",
       "due": "2027-03-26"
     }
   ],
-  "Request Triage Tool": [
+  "OmicsXplorer": [
     {
       "id": "1ccf19dc",
-      "text": "Request Triage Tool: milestone 1",
+      "text": "OmicsXplorer: milestone 1",
       "level": 0,
       "done": false,
       "start": "2026-10-23",
@@ -94,7 +138,7 @@
     },
     {
       "id": "46dddc70",
-      "text": "Request Triage Tool: milestone 2",
+      "text": "OmicsXplorer: milestone 2",
       "level": 0,
       "done": false,
       "start": "2026-11-17",
@@ -102,7 +146,7 @@
     },
     {
       "id": "2e88e224",
-      "text": "Request Triage Tool: milestone 3",
+      "text": "OmicsXplorer: milestone 3",
       "level": 0,
       "done": false,
       "start": "2026-12-15",
@@ -110,7 +154,7 @@
     },
     {
       "id": "b0870b34",
-      "text": "Request Triage Tool: milestone 4",
+      "text": "OmicsXplorer: milestone 4",
       "level": 0,
       "done": false,
       "start": "2027-01-12",
@@ -118,17 +162,17 @@
     },
     {
       "id": "5716f41f",
-      "text": "Request Triage Tool: milestone 5",
+      "text": "OmicsXplorer: milestone 5",
       "level": 0,
       "done": false,
       "start": "2027-02-08",
       "due": "2027-03-13"
     }
   ],
-  "Template Library": [
+  "Snippet Library": [
     {
       "id": "41acd9eb",
-      "text": "Template Library: milestone 1",
+      "text": "Snippet Library: milestone 1",
       "level": 0,
       "done": true,
       "start": "2026-10-08",
@@ -136,7 +180,7 @@
     },
     {
       "id": "e8358c08",
-      "text": "Template Library: milestone 2",
+      "text": "Snippet Library: milestone 2",
       "level": 0,
       "done": false,
       "start": "2026-11-16",
@@ -144,63 +188,11 @@
     },
     {
       "id": "09af2322",
-      "text": "Template Library: milestone 3",
+      "text": "Snippet Library: milestone 3",
       "level": 0,
       "done": false,
       "start": "2026-12-21",
       "due": "2027-01-16"
-    }
-  ],
-  "OmicsXplorer": [
-    {
-      "id": "2b35d6f4",
-      "text": "OmicsXplorer: milestone 1",
-      "level": 0,
-      "done": false,
-      "start": "2026-10-09",
-      "due": "2026-11-21"
-    },
-    {
-      "id": "64379ede",
-      "text": "OmicsXplorer: milestone 2",
-      "level": 0,
-      "done": false,
-      "start": "2026-11-22",
-      "due": "2026-12-28"
-    },
-    {
-      "id": "2a26de51",
-      "text": "OmicsXplorer: milestone 3",
-      "level": 0,
-      "done": false,
-      "start": "2026-12-29",
-      "due": "2027-01-21"
-    }
-  ],
-  "Snippet Library": [
-    {
-      "id": "f0926a15",
-      "text": "Snippet Library: milestone 1",
-      "level": 0,
-      "done": true,
-      "start": "2026-09-18",
-      "due": "2026-10-27"
-    },
-    {
-      "id": "d5b4f685",
-      "text": "Snippet Library: milestone 2",
-      "level": 0,
-      "done": false,
-      "start": "2026-10-28",
-      "due": "2026-11-22"
-    },
-    {
-      "id": "c32f05c8",
-      "text": "Snippet Library: milestone 3",
-      "level": 0,
-      "done": false,
-      "start": "2026-11-23",
-      "due": "2026-12-25"
     }
   ]
 }

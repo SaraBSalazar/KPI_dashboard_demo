@@ -86,6 +86,36 @@ GLOSSARY_MD = """
   methods, or background material.
 """
 
+# Shared with both the main page's Year tab (right by the chart) and the Add Data page --
+# explains the "Projects received vs finished" chart's bars/line and the different date
+# columns behind them, since those don't map one-to-one onto anything in the glossary above.
+RECEIVED_FINISHED_GLOSSARY_MD = """
+**Bars**
+- **Received (navy, top half)** — counted by *received date*: normally Register Project,
+  except an Inherited Project, which counts from Begining instead (its registration ran
+  under whoever had it before).
+- **Finished (teal, bottom half)** — counted by **Closing Day**: the administrative close,
+  not the deliverable itself. A project can finish its real work (Final Report Sent) well
+  before it's formally closed — hover a bar to see which projects closed the same day
+  their report went out vs. later, and by how much.
+
+**Orange dashed line — real workload**
+A project counts as *open* for a month if it had already started by that month's end and
+hadn't yet ended by then — "started" is first contact (First User Meeting/Shared Data,
+or Begining for an Inherited Project), "ended" is Final Report Sent, falling back to
+Closing Day if no report was ever sent. Consulting-trigger projects are left off this line
+entirely (a standing advisory thread has no start/end to be "open" between).
+
+**Different time tracking, in one place**
+Several distinct dates feed this chart, each answering a different question:
+- *Register Project* / *Begining* — when the project entered the tracker vs. when work on
+  it actually began (not always the same day).
+- *Final Report Sent* — the real deliverable going out.
+- *Closing Day* — the administrative close, which can lag the report by days or weeks.
+- *Register → Closing Day* — the full span Agendo tracks, used for the effort view on the
+  Projects Review page rather than this chart.
+"""
+
 
 def format_hm(hours, signed=False):
     """3.9166 -> '3h55min'; 4.0 -> '4h'; -1.1 -> '-1h06min'; signed=True adds a '+' for > 0."""
@@ -1206,7 +1236,7 @@ def project_attention(projects, df_period=None, quiet_days=ATTENTION_QUIET_DAYS,
 
 
 LEAD_TIME_MAX_DAYS = 730  # a stage longer than ~2 years is a data-entry error, not a lead time
-PAUSE_MIN_WEEKS = 2  # a 1-week hole in the log is noise; from 2 consecutive empty weeks it's a pause
+PAUSE_MIN_WEEKS = 1  # a single empty week between two active ones already reads as stopped
 
 
 def project_activity(df_period):
@@ -1236,7 +1266,7 @@ def project_activity(df_period):
     return activity
 
 
-def lead_time_table(projects, df_period=None, period_end=None):
+def lead_time_table(projects, df_period=None, period_end=None, exclusions=None):
     """Per-project turnaround, computed from the tracker's own date columns rather than its
     'Lead Time: Request to Project Start' column (which is a Notion text field, usually
     blank, and holds a date rather than a duration).
@@ -1265,6 +1295,13 @@ def lead_time_table(projects, df_period=None, period_end=None):
                     lands in `report`. Without that it would read as still running today,
                     months after it actually wrapped up.
 
+    `exclusions` (a collection of project tags, from load_exclusions) layers a manual,
+    per-project override of that same "out of the medians" treatment on top of the
+    automatic Internal one -- for anything Internal doesn't already catch but shouldn't
+    count either (an open-ended wait, a project effectively on hold). Each row's
+    `discounted` is `internal OR in exclusions`; `internal` itself is kept separate so the
+    chart can still say *why* ("Internal project" vs "excluded by hand").
+
     When `df_period` is given, each row also carries what the personal time log says —
     not replacing the tracker's dates, but annotating them:
       real_start   = start of the first week with logged hours: when work *really* began,
@@ -1274,14 +1311,19 @@ def lead_time_table(projects, df_period=None, period_end=None):
                      (`pre_log` True then: the real start predates the log, so the log
                      can't see it).
       weeks_active = distinct weeks with hours; gaps / weeks_paused = pauses of
-                     >= PAUSE_MIN_WEEKS consecutive empty weeks (see project_activity),
-                     so a stop-and-restart project is visible.
+                     >= PAUSE_MIN_WEEKS consecutive empty weeks (see project_activity), plus
+                     a trailing gap from the last logged week to work_end when that's also
+                     >= PAUSE_MIN_WEEKS -- project_activity alone only catches a
+                     stop-and-RESTART; a project touched once and never again needs this to
+                     show up as paused at all.
 
     Rows whose dates are impossible (out of order, or a stage longer than
     LEAD_TIME_MAX_DAYS -- almost always a mistyped year) are kept but marked in `flag`, so
     callers can report them to the user instead of letting them poison the medians."""
     today = pd.Timestamp.now().normalize()
     activity = project_activity(df_period)
+    exclusions = set(exclusions or ())
+    has_desc = "Short Description" in projects.columns
     hours_by_tag, _hours_source = project_hours_with_source(projects, df_period)
     # The log's very first week ever: a project already active then may well have started
     # earlier, before time tracking existed -- the log simply can't see it.
@@ -1326,7 +1368,19 @@ def lead_time_table(projects, df_period=None, period_end=None):
         elif max(abs(waiting), abs(working)) > LEAD_TIME_MAX_DAYS:
             flag = "a stage spans over 2 years — check for a mistyped year"
 
-        gaps = act["gaps"] if act else []
+        # project_activity's gaps only catch a stop-and-RESTART (a hole strictly between
+        # two active weeks) -- a project touched once and never again has no second active
+        # week to bound a gap against, so it would otherwise show zero pauses no matter how
+        # long it's been quiet. This trailing gap covers exactly that: silence from the
+        # last logged week up to work_end (today/period end if still running, the report
+        # date if delivered), the same way a mid-project hole would.
+        gaps = list(act["gaps"]) if act else []
+        if act:
+            trailing_weeks = int((work_end - act["last_end"]).days // 7)
+            if trailing_weeks >= PAUSE_MIN_WEEKS:
+                gaps.append({"start": act["last_end"] + pd.Timedelta(days=1),
+                             "end": work_end, "weeks": trailing_weeks})
+        is_internal = trigger == "Internal"
         rows.append({
             "Project tag": tag, "first_contact": first, "start": start,
             "work_end": work_end, "report": report if done else pd.NaT,
@@ -1338,8 +1392,11 @@ def lead_time_table(projects, df_period=None, period_end=None):
             # report to the administrative close.
             "register": p.get("Register Project"), "closing": p.get("Closing Day"),
             "hours": float(hours_by_tag.get(tag, 0.0)),
+            "description": (p.get("Short Description") if has_desc else None),
             "inherited": trigger == "Inherited Project",
-            "internal": trigger == "Internal",
+            "internal": is_internal,
+            "excluded_manually": (not is_internal) and tag in exclusions,
+            "discounted": is_internal or tag in exclusions,
             "weeks_active": act["n_active"] if act else None,
             "weeks_paused": sum(g["weeks"] for g in gaps), "gaps": gaps,
         })
@@ -1378,14 +1435,40 @@ def save_pause_notes(notes):
                                 encoding="utf-8")
 
 
+# --- Manual turnaround exclusions: "don't count this project's time either" ----------------
+# A per-project override layered on top of the automatic Internal-trigger exclusion, for
+# anything that isn't Internal but still shouldn't count toward the turnaround medians --
+# a project effectively on hold, an open-ended wait on something outside the project
+# itself. lead_time_table folds this into `discounted` alongside `internal`.
+EXCLUSIONS_PATH = DATA_DIR / "project_turnaround_exclusions.json"
+
+
+def load_exclusions():
+    """{project tag} -- set of projects manually excluded from the turnaround medians."""
+    if not EXCLUSIONS_PATH.exists():
+        return set()
+    try:
+        data = json.loads(EXCLUSIONS_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return set()
+    return {str(tag) for tag in (data or [])}
+
+
+def save_exclusions(tags):
+    """Persist the manual-exclusion set. Callers should guard with PermissionError like
+    every other save."""
+    EXCLUSIONS_PATH.write_text(json.dumps(sorted(set(tags)), indent=2, ensure_ascii=False),
+                                encoding="utf-8")
+
+
 def lead_time_summary(lead_df):
     """Median turnaround figures from `lead_time_table`, ignoring flagged (bad-date) rows
-    and internal projects (no external user waits on those, so they aren't turnaround --
-    the chart still draws them, muted). Each value is None when nothing qualifies, so
-    callers can show an em dash."""
+    and anything `discounted` -- internal projects (no external user waits on those, so
+    they aren't turnaround) or manually excluded ones. The chart still draws them, muted.
+    Each value is None when nothing qualifies, so callers can show an em dash."""
     clean = lead_df[lead_df["flag"] == ""] if len(lead_df) else lead_df
-    if len(clean) and "internal" in clean.columns:
-        clean = clean[~clean["internal"].fillna(False).astype(bool)]
+    if len(clean) and "discounted" in clean.columns:
+        clean = clean[~clean["discounted"].fillna(False).astype(bool)]
 
     def med(series):
         return None if not len(series) else float(series.median())
@@ -1405,6 +1488,8 @@ def lead_time_summary(lead_df):
         "n_flagged": int((lead_df["flag"] != "").sum()) if len(lead_df) else 0,
         "n_internal": (int(lead_df["internal"].fillna(False).astype(bool).sum())
                        if len(lead_df) and "internal" in lead_df.columns else 0),
+        "n_excluded_manually": (int(lead_df["excluded_manually"].fillna(False).astype(bool).sum())
+                                 if len(lead_df) and "excluded_manually" in lead_df.columns else 0),
         "n_shown": int(len(shown)), "n_shown_delivered": int(len(shown_delivered)),
     }
 
@@ -1430,6 +1515,7 @@ def lead_time_coverage(projects, lead_df, stats):
         "consulting": consulting,
         "undated": max(0, total - charted - consulting),
         "internal": stats["n_internal"],
+        "excluded_manually": stats["n_excluded_manually"],
         "flagged": stats["n_flagged"],
         "measured": stats["n_shown"],
     }
@@ -1446,9 +1532,18 @@ def lead_time_coverage_note(cov):
     tail = (" · ".join(listed) + "." if listed else "all of them.")
     note = (f"**{cov['total']}** projects this period — **{cov['measured']}** on the chart, "
             + tail)
+    discounted_bits = []
     if cov["internal"]:
-        note += (f" The **{cov['internal']}** internal one is counted above and drawn, but "
-                 "stays out of the three medians.")
+        discounted_bits.append(f"**{cov['internal']}** internal")
+    if cov["excluded_manually"]:
+        discounted_bits.append(f"**{cov['excluded_manually']}** excluded by hand")
+    if discounted_bits:
+        is_plural = (cov["internal"] + cov["excluded_manually"]) != 1
+        noun = "projects" if is_plural else "project"
+        verb = "are" if is_plural else "is"
+        stay = "stay" if is_plural else "stays"
+        note += (f" The {' and '.join(discounted_bits)} {noun} {verb} counted above and "
+                 f"drawn, but {stay} out of the three medians.")
     return note
 
 
@@ -1463,8 +1558,8 @@ def lead_time_effort(lead_df):
 
     Values are None when nothing qualifies, so callers can show an em dash."""
     clean = lead_df[lead_df["flag"] == ""] if len(lead_df) else lead_df
-    if len(clean) and "internal" in clean.columns:
-        clean = clean[~clean["internal"].fillna(False).astype(bool)]
+    if len(clean) and "discounted" in clean.columns:
+        clean = clean[~clean["discounted"].fillna(False).astype(bool)]
     if not len(clean):
         return {"median_agendo": None, "n_agendo": 0}
 
@@ -1495,8 +1590,8 @@ def turnaround_by_size(lead_df):
 
     Returns one dict per band: label, range_label, median_days (None when empty), n."""
     clean = lead_df[lead_df["flag"] == ""] if len(lead_df) else lead_df
-    if len(clean) and "internal" in clean.columns:
-        clean = clean[~clean["internal"].fillna(False).astype(bool)]
+    if len(clean) and "discounted" in clean.columns:
+        clean = clean[~clean["discounted"].fillna(False).astype(bool)]
     if len(clean):
         clean = clean[clean["done"] & (clean["hours"].fillna(0) > 0)]
 

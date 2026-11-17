@@ -482,6 +482,8 @@ with tab_year:
             bits.append(f"{gap_stats['n_delayed']} took a median {kd.format_days(gap_stats['median_gap_days'])} "
                          "longer to formally close after the report was delivered")
         st.caption(" · ".join(bits) + " — hover a bar above for which.")
+    with st.expander("📖 Chart legend"):
+        st.markdown(kd.RECEIVED_FINISHED_GLOSSARY_MD)
 
     st.divider()
     st.subheader(f"Time logged — {period_label}", anchor="year-timelog")

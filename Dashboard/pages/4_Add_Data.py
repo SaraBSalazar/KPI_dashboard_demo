@@ -89,6 +89,8 @@ st.caption(
 )
 with st.expander("📖 Category & task glossary"):
     st.markdown(kd.GLOSSARY_MD)
+with st.expander("📖 Projects received vs finished — chart legend"):
+    st.markdown(kd.RECEIVED_FINISHED_GLOSSARY_MD)
 
 periods = kcache.discover_periods()
 if not periods:

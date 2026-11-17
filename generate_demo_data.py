@@ -203,7 +203,11 @@ def build_time_log(projects):
     version) left early months -- before most projects have even started -- reading as
     almost no work at all; topping up to a target each week is what keeps every month's
     total healthy and gives non-project categories a real, visible share instead of a
-    token one."""
+    token one. Per-project hours are generated week-major (every project scheduled for a
+    week takes its turn in random order before the per-week cap kicks in), not
+    project-major (the third version did that -- whichever project happened to be last in
+    the list got silently crowded out of the same weeks every time by the cap, reading as
+    that one project abandoned for months when it was really just list order)."""
     year_start, year_end = date(YEAR, 1, 1), date(YEAR, 12, 31)
     today = date.today()
     rows = []
@@ -224,8 +228,10 @@ def build_time_log(projects):
         entry_id += 1
         week_hours[monday] = week_hours.get(monday, 0.0) + hrs + mins / 60
 
-    project_windows = {}  # tag -> (begin_d, end_d), reused below to keep dev-side entries
-                           # from landing on a project before it's even begun
+    # Pass 1: each project's own schedule -- which weeks it's active, minus one internal
+    # pause -- computed independently of every other project's schedule.
+    project_windows = {}  # tag -> (begin_d, end_d), reused below for the dev-side entries
+    project_weeks = {}    # tag -> [Monday, ...], the weeks that project WANTS to log in
 
     for _, p in projects.iterrows():
         begin = p["Begining"]
@@ -254,19 +260,28 @@ def build_time_log(projects):
             start_idx = random.randint(2, len(weeks) - pause_len - 2)
             pause = set(range(start_idx, start_idx + pause_len))
 
-        for i, wk in enumerate(weeks):
-            if i in pause:
-                continue
-            if random.random() < 0.05:  # a rare single skipped week -- low enough that two in a
-                                         # row (which would itself read as a second "pause") stays rare
-                continue
-            # a bit more per sitting when fewer projects are sharing the week (see the
-            # per-week cap below) keeps a single active project from reading as part-time
+        project_weeks[p["Project tag"]] = [wk for i, wk in enumerate(weeks) if i not in pause]
+
+    # Pass 2: week-major, not project-major. For any week where several projects are
+    # scheduled, who gets crowded out by the per-week cap below needs to be random, not
+    # always whichever project happens to be listed last -- a fixed iteration order would
+    # silently starve the same late-listed projects week after week, reading as a project
+    # quietly abandoned when it's really just where it sits in a list.
+    by_week = {}
+    for tag, weeks in project_weeks.items():
+        for wk in weeks:
+            by_week.setdefault(wk, []).append(tag)
+
+    for wk, tags_here in sorted(by_week.items()):
+        random.shuffle(tags_here)
+        for tag in tags_here:
+            if random.random() < 0.02:  # a rare single skipped week -- kept low since
+                continue                 # PAUSE_MIN_WEEKS=1 means even one counts as a pause
             if week_hours.get(wk, 0) >= 20:  # already a full day's worth from other active
                 continue                      # projects this week -- one person, one week
             for _ in range(random.randint(1, 3)):
                 hrs, mins = random.choice([1, 2, 2, 3, 4, 4]), random.choice([0, 0, 15, 30])
-                add_entry(wk, "Projects", random.choice(PROJECT_MAJOR_TASKS), p["Project tag"], hrs, mins)
+                add_entry(wk, "Projects", random.choice(PROJECT_MAJOR_TASKS), tag, hrs, mins)
                 if week_hours.get(wk, 0) >= 20:  # leave room for other active projects and
                     break                        # non-project hours -- one person, one week
 

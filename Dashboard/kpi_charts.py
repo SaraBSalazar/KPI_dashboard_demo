@@ -1070,9 +1070,11 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
     ({project: {gap-start ISO: note}}) in the tooltip -- so a stopped-and-restarted project
     doesn't read as continuous work. A `real_start` (first week with logged hours) draws as
     a diamond on the row: when work *really* began, before or after the tracker's start.
-    Internal projects draw faded + hatched across both stages -- the same visual language as
-    an inherited wait, in blue rather than orange -- because lead_time_summary leaves them
-    out of the medians.
+    Internal projects, and anything in `excluded_manually` (see kd.load_exclusions), draw
+    faded + hatched across both stages -- the same visual language as an inherited wait, in
+    blue (internal) or gray (excluded by hand) rather than orange -- because
+    lead_time_summary leaves both out of the medians.
+    Every hovertext also carries the project's `description` (Short Description), when set.
     A span too short to see at this zoom is widened to MIN_BAR_SPAN (tooltips keep the real
     figure), so a project delivered in a day still shows up instead of vanishing."""
     fig = go.Figure()
@@ -1106,18 +1108,26 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
         return (clean[name].fillna(False).astype(bool) if name in clean.columns
                 else pd.Series(False, index=clean.index))
 
+    def desc_line(desc):
+        """'<br>Short description' when there is one, else '' -- appended to every hover
+        below so a row reads as a project, not just a tag."""
+        return f"<br>{desc}" if pd.notna(desc) and str(desc).strip() else ""
+
     # Inherited projects get their waiting span faded + hatched: that time (first meeting /
     # registration until Begining) ran under the project's previous owner, so it shouldn't
-    # read with the same visual weight as waiting that was actually ours. Internal projects
-    # get the same treatment across *both* stages -- they're out of the medians entirely
-    # (see kd.lead_time_summary), so the row should read as context, not as a measurement.
+    # read with the same visual weight as waiting that was actually ours. Internal projects,
+    # and anything manually excluded (kd.load_exclusions), get the same treatment across
+    # *both* stages -- they're out of the medians entirely (see kd.lead_time_summary), so
+    # the row should read as context, not as a measurement.
     clean["_inherited"], clean["_internal"] = flag_col("inherited"), flag_col("internal")
-    regular = clean[~clean["_internal"]]
+    clean["_excluded_manually"] = flag_col("excluded_manually")
+    regular = clean[~clean["_internal"] & ~clean["_excluded_manually"]]
 
     def muted_marker(color):
         """Faded + hatched: present, but visibly not a measurement. `color` keys which kind
         it is -- orange for a wait that ran under a previous owner, blue for an internal
-        project. The hatch, not the hue, is what says 'not counted'."""
+        project, gray for anything excluded by hand. The hatch, not the hue, is what says
+        'not counted'."""
         return dict(color=_rgba(color, 0.18), cornerradius=4,
                     line=dict(color=TL_SURFACE, width=2),
                     pattern=dict(shape="/", fgcolor=color, solidity=0.3, size=7))
@@ -1132,12 +1142,12 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
             y=[_wrap_label(t, 20) for t in sub["Project tag"]],
             base=sub["first_contact"], x=widths(sub["waiting_days"]),
             orientation="h", name=name, marker=marker,
-            hovertext=[f"<b>{t}</b><br>Waiting {d} day{'' if d == 1 else 's'}<br>"
+            hovertext=[f"<b>{t}</b>{desc_line(desc)}<br>Waiting {d} day{'' if d == 1 else 's'}<br>"
                        f"{f.strftime('%d %b %Y')} → {s.strftime('%d %b %Y')}"
                        + ("<br><i>Inherited project — this span ran under its previous owner</i>"
                           if is_inh else "")
-                       for t, d, f, s in zip(sub["Project tag"], sub["waiting_days"],
-                                             sub["first_contact"], sub["start"])],
+                       for t, desc, d, f, s in zip(sub["Project tag"], sub["description"], sub["waiting_days"],
+                                                    sub["first_contact"], sub["start"])],
             hoverinfo="text",
         ))
 
@@ -1151,35 +1161,43 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
             base=sub["start"], x=widths(sub["working_days"], keep_zero=False),
             orientation="h", name=name,
             marker=dict(color=color, cornerradius=4, line=dict(color=TL_SURFACE, width=2)),
-            hovertext=[f"<b>{t}</b><br>{'Delivered in' if done else 'Running for'} "
+            hovertext=[f"<b>{t}</b>{desc_line(desc)}<br>{'Delivered in' if done else 'Running for'} "
                        f"{d} day{'' if d == 1 else 's'}<br>{s.strftime('%d %b %Y')} → "
                        f"{e.strftime('%d %b %Y')}"
                        + ("" if done else (" (today)" if e == today else " (end of period)"))
-                       for t, d, s, e in zip(sub["Project tag"], sub["working_days"],
-                                             sub["start"], sub["work_end"])],
+                       for t, desc, d, s, e in zip(sub["Project tag"], sub["description"], sub["working_days"],
+                                                    sub["start"], sub["work_end"])],
             hoverinfo="text",
         ))
 
-    # Internal projects: one muted style over the whole row, one legend entry. The working
-    # trace carries the legend, because a zero-day wait draws nothing to hang it on.
-    internal = clean[clean["_internal"]]
-    if len(internal):
+    # Internal projects, and anything manually excluded: one muted style over the whole
+    # row, one legend entry each. The working trace carries the legend, because a zero-day
+    # wait draws nothing to hang it on.
+    for subset_flag, base_color, legend_name, legend_group, why in (
+        ("_internal", RECEIVED_COLOR, "Internal project (not in the medians)", "internal",
+         "Internal project — no external user waiting on it, so it stays out of the "
+         "turnaround medians"),
+        ("_excluded_manually", TL_INK_MUTED, "Excluded by hand (not in the medians)", "excluded",
+         "Excluded by hand — doesn't count toward the turnaround medians"),
+    ):
+        subset = clean[clean[subset_flag]]
+        if not len(subset):
+            continue
         for stage, base, days, end, keep_zero, legend in (
-            ("Waiting", internal["first_contact"], internal["waiting_days"],
-             internal["start"], True, False),
-            ("Working", internal["start"], internal["working_days"],
-             internal["work_end"], False, True),
+            ("Waiting", subset["first_contact"], subset["waiting_days"],
+             subset["start"], True, False),
+            ("Working", subset["start"], subset["working_days"],
+             subset["work_end"], False, True),
         ):
             fig.add_trace(go.Bar(
-                y=[_wrap_label(t, 20) for t in internal["Project tag"]],
+                y=[_wrap_label(t, 20) for t in subset["Project tag"]],
                 base=base, x=widths(days, keep_zero=keep_zero), orientation="h",
-                name="Internal project (not in the medians)", legendgroup="internal",
-                showlegend=legend, marker=muted_marker(RECEIVED_COLOR),
-                hovertext=[f"<b>{t}</b><br>{stage} {d} day{'' if d == 1 else 's'}<br>"
-                           f"{b.strftime('%d %b %Y')} → {e.strftime('%d %b %Y')}"
-                           "<br><i>Internal project — no external user waiting on it, so "
-                           "it stays out of the turnaround medians</i>"
-                           for t, d, b, e in zip(internal["Project tag"], days, base, end)],
+                name=legend_name, legendgroup=legend_group,
+                showlegend=legend, marker=muted_marker(base_color),
+                hovertext=[f"<b>{t}</b>{desc_line(desc)}<br>{stage} {d} day{'' if d == 1 else 's'}<br>"
+                           f"{b.strftime('%d %b %Y')} → {e.strftime('%d %b %Y')}<br><i>{why}</i>"
+                           for t, desc, d, b, e in zip(subset["Project tag"], subset["description"],
+                                                        days, base, end)],
                 hoverinfo="text",
             ))
 
@@ -1191,7 +1209,8 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
                 g_labels.append(_wrap_label(r["Project tag"], 20))
                 g_bases.append(g["start"])
                 g_x.append(g["weeks"] * 7 * ms)
-                g_text.append(f"<b>{r['Project tag']}</b><br>Paused {g['weeks']} week"
+                g_text.append(f"<b>{r['Project tag']}</b>{desc_line(r.get('description'))}<br>"
+                              f"Paused {g['weeks']} week"
                               f"{'' if g['weeks'] == 1 else 's'} — no hours logged<br>"
                               f"{g['start'].strftime('%d %b %Y')} → {g['end'].strftime('%d %b %Y')}"
                               + (f"<br><i>{note}</i>" if note else ""))

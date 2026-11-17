@@ -111,7 +111,8 @@ st.caption(
     "How long projects take — **waiting** = first contact until the tracker's work start, "
     "**working** = from there until the final report. The **◆ diamond** marks when work "
     "*really* began per the time log (first week with hours), which can sit before or after "
-    "the tracker's Agendo-fed date; pauses (2+ weeks with no hours) show in gray."
+    f"the tracker's Agendo-fed date; pauses ({kd.PAUSE_MIN_WEEKS}+ week"
+    f"{'' if kd.PAUSE_MIN_WEEKS == 1 else 's'} with no hours) show in gray."
 )
 with st.expander("ℹ️ How these numbers are calculated"):
     st.markdown(f"""
@@ -135,6 +136,10 @@ with st.expander("ℹ️ How these numbers are calculated"):
   out of all four tiles: there's no external user waiting, so their days aren't service
   turnaround. They also have no report to send, so the **Closing Day** ends their working
   stage (and is what shows under *Report sent* in the table below).
+- **Discounted by hand** — any other project you tick in **🚫 Discount from turnaround
+  metrics** below draws **faded and hatched in gray**, the same treatment as Internal, and
+  is left out of the same four tiles. Use it for anything that isn't Internal but
+  shouldn't count either — an open-ended wait, a project effectively on hold.
 - **Consulting blocks** don't appear here at all — a standing advisory thread has no start
   and no report to deliver, so there's no turnaround to measure. They're still counted in
   the project total above, and have their own section further down.
@@ -148,7 +153,7 @@ with st.expander("ℹ️ How these numbers are calculated"):
 - **These are medians** (not averages, so one slow project can't distort them). *Wait to
   start* covers every project with usable dates; the delivery figures only projects with a
   Final Report Sent. Rows with impossible dates are flagged and left out, as are internal
-  projects.
+  and discounted-by-hand projects.
 - **The second row is three ways of measuring the same projects' duration** — the headline
   *total turnaround* (first contact → final report), the work-only span inside it (*time to
   deliver*), and the administrative span (*Agendo tracking*, Register Project → Closing Day,
@@ -163,7 +168,8 @@ with st.expander("ℹ️ How these numbers are calculated"):
   Agendo column otherwise — for any period that predates the time log, every hours figure
   here is Agendo. Projects with no hours on record sit it out.
 """)
-lead_df = kd.lead_time_table(projects, df_period_for_hours, period_end=period["end"])
+exclusions = kd.load_exclusions()
+lead_df = kd.lead_time_table(projects, df_period_for_hours, period_end=period["end"], exclusions=exclusions)
 lead_stats = kd.lead_time_summary(lead_df)
 pause_notes = kd.load_pause_notes()
 
@@ -173,8 +179,9 @@ lt1.metric("Typical wait to start", kd.format_days(lead_stats["median_waiting"])
            help="The queue — median days from first contact to work starting. This is the "
                 "part the user spends waiting on us before anything begins.")
 lt2.metric("Projects measured", f"{lead_stats['n_shown_delivered']}/{lead_stats['n_shown']}",
-           help="Delivered out of the projects on the chart. Internal projects are counted "
-                "here, but their days stay out of the medians.")
+           help="Delivered out of the projects on the chart. Internal projects, and anything "
+                "discounted by hand below, are counted here, but their days stay out of the "
+                "medians.")
 lt3.metric("Consulting", lead_cov["consulting"],
            help="Standing advisory threads. They have no start and no report to deliver, so "
                 "there's no turnaround to measure and they aren't on the chart — they're "
@@ -254,13 +261,13 @@ paused_rows = [r for _, r in lead_df.iterrows() if r.get("gaps")] if len(lead_df
 if paused_rows:
     with st.expander(f"⏸ Pauses — {sum(len(r['gaps']) for r in paused_rows)} detected "
                      f"across {len(paused_rows)} project{'s' if len(paused_rows) != 1 else ''}"):
+        pause_def = (f"A pause = {kd.PAUSE_MIN_WEEKS}+ consecutive week"
+                     f"{'' if kd.PAUSE_MIN_WEEKS == 1 else 's'} with no hours logged for the "
+                     "project, between two active weeks.")
         st.caption(
-            "A pause = 2+ consecutive weeks with no hours logged for the project, between two "
-            "active weeks. Add a note saying why (e.g. *waiting for user*) — it's kept in "
+            f"{pause_def} Add a note saying why (e.g. *waiting for user*) — it's kept in "
             "project_pause_notes.json and shows in the chart's tooltip."
-            if not READONLY else
-            "A pause = 2+ consecutive weeks with no hours logged for the project, between two "
-            "active weeks."
+            if not READONLY else pause_def
         )
         changed = False
         for r in paused_rows:
@@ -290,6 +297,45 @@ if paused_rows:
             else:
                 st.toast("Pause note saved.", icon="💾")
                 st.rerun()  # redraw so the chart tooltip above picks the note up immediately
+
+# --- Discount from metrics: a manual, per-project override on top of the automatic
+# Internal-trigger exclusion, for anything that isn't Internal but shouldn't count either
+# (an open-ended wait, a project effectively on hold). Persisted in
+# project_turnaround_exclusions.json; a ticked project draws faded + hatched on the chart,
+# the same visual language as Internal, and drops out of the four tiles above.
+eligible = lead_df[(lead_df["flag"] == "") & ~lead_df["internal"]] if len(lead_df) else lead_df
+if len(eligible):
+    with st.expander("🚫 Discount from turnaround metrics"):
+        st.caption(
+            "Tick a project to leave its days out of the four tiles above and the size "
+            "bands further down — it still draws on the chart, just faded and hatched, "
+            "like an Internal project. Internal projects are already excluded "
+            "automatically and aren't listed here."
+            if not READONLY else
+            "Projects ticked here are left out of the turnaround medians above; they "
+            "still draw on the chart, faded and hatched."
+        )
+        new_exclusions = set(exclusions)
+        for _, r in eligible.sort_values("Project tag").iterrows():
+            tag = r["Project tag"]
+            if READONLY:
+                if tag in exclusions:
+                    st.markdown(f"**{tag}** — discounted")
+                continue
+            ticked = st.checkbox(tag, value=tag in exclusions, key=f"exclude_{tag}")
+            if ticked:
+                new_exclusions.add(tag)
+            else:
+                new_exclusions.discard(tag)
+        if not READONLY and new_exclusions != exclusions:
+            try:
+                kd.save_exclusions(new_exclusions)
+            except PermissionError:
+                st.error("Couldn't save — project_turnaround_exclusions.json is locked "
+                         "(OneDrive sync?). Try again in a moment.")
+            else:
+                st.toast("Updated.", icon="💾")
+                st.rerun()  # redraw so the chart and tiles above pick the change up immediately
 
 st.divider()
 anchor("hours-by-project")
