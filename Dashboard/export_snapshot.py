@@ -714,7 +714,7 @@ def build():
             + f'<div class="toolbar"><div class="tabs" role="tablist">{tab_buttons}</div>{period_picker}</div>'
             + NOSCRIPT + "".join(panels)
             + f"<footer>Static snapshot generated {generated} · "
-            "GIMM — Gulbenkian Institute for Molecular Medicine</footer></div>"
+            "KPI dashboard (demo)</footer></div>"
             + f'<script id="figdata" type="application/json">{figdata}</script>')
 
     plotly_js = f"<script>{get_plotlyjs()}</script>"

@@ -335,11 +335,74 @@ def build_custom_tags():
     print(f"wrote {path}")
 
 
+# --- --empty: a blank starting point for real use, not fake content -----------------------
+PROJECT_COLS = [
+    "Project tag", "Short Description", "User Type", "User Location", "Grupo", "User",
+    "Project Outputs", "Type of Data", "Project Trigger", "First User Meeting/Shared Data",
+    "Register Project", "Begining", "Lead Time: Request to Project Start", "Final Report Sent",
+    "Closing Day", "Hours in Agendo", "Number of Reports", "Number of Meetings", "Price Charged",
+    "Non-quantifiable outputs", "Notas",
+]
+MEETING_COLS = ["Project tag", "User Type", "Date", "User Location", "Grupo", "User",
+                "Meeting Outputs", "Time"]
+TIMELOG_COLS = ["Entry", "Agendo updated", "Category", "Hours (exact)", "Major task name (chart)",
+                 "Hrs", "Min", "Month", "Month and year (chart)", "Notes", "Week",
+                 "Weekly entry name (chart)", "Year", "Unnamed: 13"]
+GOALS_COLS = ["Goal", "Project", "Description", "Advantages", "Limitations", "Future gain",
+              "Development", "Impact", "Maintenance", "Visibility"]
+TOOLS_COLS = ["Name", "Description", "Type of tool", "Built in", "Use", "Project Origin",
+              "Limitations", "Future gain"]
+
+
+def build_empty(year=None):
+    """Write every file Dashboard/kpi_data.py needs, with the right columns/sheets but
+    ZERO rows of content -- a real starting point instead of fake placeholder activity.
+    Some files (the two JSON task/beyond-projects files and their Excel mirrors) have no
+    safe "empty but present" state worth writing, since kpi_data.py already creates them
+    correctly (empty, or via a small generic seed) the first time it finds them missing --
+    see README.md's "Starting fresh with your own data" for exactly which is which."""
+    year = year or date.today().year
+    print(f"Writing an EMPTY starting point for calendar year {year} (no fake content)...\n")
+
+    path = DATA_DIR / f"KPI_{year}.xlsx"
+    with pd.ExcelWriter(path, engine="openpyxl") as xl:
+        pd.DataFrame(columns=PROJECT_COLS).to_excel(xl, sheet_name=f"{year}_CALENDAR", index=False)
+        pd.DataFrame(columns=MEETING_COLS).to_excel(xl, sheet_name=f"{year}_CALENDAR_meetings", index=False)
+    print(f"wrote {path} (0 projects, 0 meetings)")
+
+    tl_path = DATA_DIR / "track_time.csv"
+    pd.DataFrame(columns=TIMELOG_COLS).to_csv(tl_path, sep=";", index=False, encoding="utf-8-sig")
+    print(f"wrote {tl_path} (0 rows)")
+
+    pd.DataFrame(columns=GOALS_COLS).to_excel(
+        DATA_DIR / "Special_Projects_Ratings.xlsx", sheet_name="Special Projects Ratings", index=False)
+    print(f"wrote {DATA_DIR / 'Special_Projects_Ratings.xlsx'} (0 rows)")
+
+    pd.DataFrame(columns=TOOLS_COLS).to_excel(DATA_DIR / "tools.xlsx", sheet_name="Tools", index=False)
+    print(f"wrote {DATA_DIR / 'tools.xlsx'} (0 rows)")
+
+    build_custom_tags()  # already writes an empty {"projects": [], ...} unconditionally
+
+    for stray in ("special_project_tasks.json", "Special_Projects_Tasks.xlsx",
+                  "beyond_projects.json", "Beyond_Projects.xlsx", "KPI_2025.xlsx"):
+        p = DATA_DIR / stray
+        if p.exists():
+            p.unlink()
+            print(f"removed {p} (the app recreates the JSON ones correctly on first use)")
+
+    print(f"\nDone. Data/ is now a blank {year} starting point -- open the dashboard and use "
+          "Add Data to fill it in, or edit the Excel/CSV files directly.")
+
+
 if __name__ == "__main__":
-    build_project_tracker()
-    build_time_log()
-    build_special_projects()
-    build_beyond_projects()
-    build_tools()
-    build_custom_tags()
-    print(f"\nDone. Demo data covers calendar year {YEAR}.")
+    import sys
+    if "--empty" in sys.argv:
+        build_empty()
+    else:
+        build_project_tracker()
+        build_time_log()
+        build_special_projects()
+        build_beyond_projects()
+        build_tools()
+        build_custom_tags()
+        print(f"\nDone. Demo data covers calendar year {YEAR}.")

@@ -41,6 +41,32 @@ same every run unless you edit the script). Read it before adapting this dashboa
 your own data — it doubles as a worked example of the exact shape (columns, sheet names,
 JSON structure) `Dashboard/kpi_data.py` expects from each file.
 
+### Starting fresh with your own data
+
+To actually use this for real tracking instead of the fake year, clear the placeholder
+content first:
+
+```powershell
+python generate_demo_data.py --empty
+```
+
+This writes every file with the right columns/sheets but **zero rows** — a real blank
+starting point for the current calendar year, not more fake content. It also removes the
+few files that have no meaningful "empty" state of their own (`special_project_tasks.json`,
+`beyond_projects.json`, and their Excel mirrors): the dashboard recreates those correctly
+the moment it needs them, either empty or via a small generic placeholder you can edit or
+clear from the Special Projects page.
+
+From there:
+
+- Open the dashboard and use **Add Data** to add your first real project, or edit
+  `Data/KPI_<year>.xlsx` / `Data/track_time.csv` directly in Excel.
+- Delete `generate_demo_data.py` once you don't need it anymore, or keep it around as a
+  reference for the exact file shapes the dashboard expects.
+- If your reporting year doesn't run Jan–Dec, see
+  [Differences from the private version](#differences-from-the-private-version) below for
+  where that convention lives and how to change it.
+
 ---
 
 ## What's in here

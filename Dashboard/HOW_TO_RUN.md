@@ -10,6 +10,55 @@ streamlit run KPI_Report.py
 Opens automatically at `http://localhost:8501`. Only reachable from this computer.
 Stop it with `Ctrl+C` in the terminal.
 
+## Testing this demo
+
+The real test is cloning it fresh somewhere else entirely, not just running it from a
+folder that's already set up — that's what proves the repo is actually self-contained.
+
+```powershell
+cd $env:TEMP
+git clone https://github.com/SaraBSalazar/KPI_dashboard_demo.git
+cd KPI_dashboard_demo
+pip install -r Dashboard\requirements.txt
+cd Dashboard
+streamlit run KPI_Report.py
+```
+
+It should open straight into a full fake year of data — no setup step, no missing-file
+errors. What to actually check on each page:
+
+- **Week / Month / Year** (main page): switch tabs, pick a different week from the
+  dropdown, confirm charts render and numbers look sane.
+- **Projects Review**: the turnaround chart, complexity bubble chart, "who we work with" —
+  the ones most likely to break if a chart function gets an unexpected column.
+- **Special Projects**: click a bubble, confirm its project card and task checklist open.
+- **Add Data**: add a dummy project, confirm it writes back to `Data/KPI_2025.xlsx`
+  without error.
+- **Tools & AI Skills**: table and gallery render.
+
+Also try `http://localhost:8501/?readonly=true` and confirm every editing control
+disappears. Stop the server with `Ctrl+C` when done.
+
+Then the snapshot exporter, from the repo root:
+
+```powershell
+cd ..
+python Dashboard\export_snapshot.py
+```
+
+Should write `Share\KPI_Report_snapshot.html` — open it directly in a browser (no server
+needed) and click through its tabs the same way.
+
+And the data generator, which should exactly reproduce the same fake year (fixed random
+seed) — a good way to undo any test edits made above:
+
+```powershell
+python generate_demo_data.py
+```
+
+Since this is a fresh clone, any error here is either a real bug or a genuinely missing
+file, not an artifact of wherever it was developed.
+
 ## 2. Sharing with someone on the same WiFi/network
 
 `localhost` always means "this machine" to whoever opens the link — on someone else's

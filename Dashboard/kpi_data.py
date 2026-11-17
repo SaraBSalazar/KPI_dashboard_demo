@@ -141,10 +141,17 @@ def load_timelog(dark=False):
     df["Month"] = pd.Categorical(df["Month"], categories=MONTH_ORDER, ordered=True)
 
     week_ordinal = df["Week"].str.extract(r"^(\d+)").astype(int)[0]
-    week_start, week_end = zip(*(
-        week_bounds(month, year, ordinal)
-        for month, year, ordinal in zip(df["Month"], df["Year"], week_ordinal)
-    ))
+    if len(df):
+        week_start, week_end = zip(*(
+            week_bounds(month, year, ordinal)
+            for month, year, ordinal in zip(df["Month"], df["Year"], week_ordinal)
+        ))
+    else:
+        # zip(*()) can't unpack into two names -- an empty log (a brand-new tracker with
+        # no entries yet) is valid, not an error. Typed as datetime64, not a bare [], so
+        # later Timestamp comparisons (weeks_in_period etc.) don't get a dtype they can't
+        # compare against.
+        week_start = week_end = pd.Series([], dtype="datetime64[ns]")
     df["_week_sort"] = week_start
     df["_week_end"] = week_end
     df["Week"] = [format_week_label(s, e) for s, e in zip(week_start, week_end)]
@@ -746,7 +753,11 @@ def load_goals():
     def goal_group(goal):
         return goal_group_colors.get(str(goal).strip()[:2], ("Optional - side project", "#8A979C"))
 
-    goals_df["_group_label"], goals_df["_group_color"] = zip(*goals_df["Goal"].map(goal_group))
+    if len(goals_df):
+        goals_df["_group_label"], goals_df["_group_color"] = zip(*goals_df["Goal"].map(goal_group))
+    else:
+        # zip(*()) can't unpack into two names -- a tracker with no goals yet is valid.
+        goals_df["_group_label"], goals_df["_group_color"] = [], []
 
     coord = pd.Series(list(zip(goals_df["Development"], goals_df["Impact"])), index=goals_df.index)
     group_sizes = coord.map(coord.value_counts())
@@ -830,21 +841,17 @@ def save_tools(edited_df):
 # --- Beyond-projects cards (per period, dashboard-only state like the task checklists) ----
 BEYOND_PATH = DATA_DIR / "beyond_projects.json"
 
-# Seed content for 2025-2026 recovered from that period's own deck-building script
-# (../SKILL/kpi-report-builder's EXTRA_ACTIVITIES / TEACHING_LOG / AUTOMATION_BLOCK config,
-# which was still set to that period when this was written) -- only used the first time
-# the file doesn't exist yet; after that, whatever's on disk (and however it's been edited)
-# is authoritative.
+# Generic placeholder, only used the first time the file doesn't exist yet; after that,
+# whatever's on disk (and however it's been edited) is authoritative. Matches the shape
+# generate_demo_data.py writes, keyed by the calendar-year period label this demo uses.
 _BEYOND_SEED = {
-    "2025–2026": [
-        {"title": "Teaching module · Cabo Verde", "value": "~59 h in total", "color": "#0B3C49",
-         "description": "24 h bioinformatics module in Cabo Verde, training future professionals abroad."},
+    "2025": [
+        {"title": "Guest lecture · Summer School", "value": "~16 h in total", "color": "#0B3C49",
+         "description": "16 h bioinformatics module for visiting students."},
         {"title": "Pipeline outreach", "value": "2", "color": "#2A9D8F",
-         "description": "Pipeline showcased at 2 conferences · opened 2 new projects: 1 active, 1 consulting."},
-        {"title": "Multiomics courses", "value": "2", "color": "#0B3C49",
-         "description": "Setting up multiomics expertise at ADA."},
-        {"title": "Internal tools", "value": "1", "color": "#E76F51",
-         "description": "ADA day-to-day management (mostly personal use)."},
+         "description": "Pipeline showcased at 2 seminars · opened 1 new project."},
+        {"title": "Internal tools", "value": "2", "color": "#E76F51",
+         "description": "Two small internal helper scripts (personal use)."},
     ],
 }
 
