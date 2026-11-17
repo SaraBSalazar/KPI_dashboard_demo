@@ -54,6 +54,16 @@ FAKE_PROJECT_TAGS = [
     "CRC_030", "CRC_031", "PLNT_004", "IMMU_017",
 ]
 
+# A handful of tags are reserved as deterministic examples of each "Needs attention" kind
+# the Projects Review page can show, instead of letting ~40% of all projects land there by
+# chance: one with no hours logged at all (-> "Not started"), a couple left genuinely
+# ongoing with some stale activity (-> "Quiet"), and one with a report sent but no Closing
+# Day set (-> "Ready to close"). Every other tag finishes and closes cleanly within the
+# year so the section stays readable instead of listing most of the portfolio.
+NOT_STARTED_TAG = "MICR_009"
+QUIET_TAGS = {"PLNT_004", "IMG_006"}
+TO_CLOSE_TAG = "SEQ_022"
+
 SHORT_DESCRIPTIONS = {
     "GEN_014": "Variant calling pipeline for a non-model organism.",
     "GEN_021": "RNA-seq differential expression re-analysis.",
@@ -101,17 +111,27 @@ def build_project_tracker():
         first_contact = _rand_date(year_start, year_end - timedelta(days=30))
         register = first_contact + timedelta(days=random.randint(0, 10))
         begin = register + timedelta(days=random.randint(0, 21))
-        # ~75% of projects are finished within the year; the rest are still running
-        finished = random.random() < 0.75
-        report_sent = begin + timedelta(days=random.randint(7, 90)) if finished else None
-        if report_sent and report_sent > year_end:
-            report_sent = None
-            finished = False
-        # a few finished projects still lack a Closing Day (exercises "needs attention")
-        closing = (report_sent + timedelta(days=random.randint(0, 5))
-                   if finished and random.random() < 0.8 else None)
-        if closing and closing > year_end:
+        if tag in (NOT_STARTED_TAG, *QUIET_TAGS):
+            # left genuinely open -- no report, no closing -- so the page's "Not started"
+            # / "Quiet" examples are these specific projects, not whichever ones happen to
+            # roll that way at random.
+            report_sent = closing = None
+        elif tag == TO_CLOSE_TAG:
+            # finished the work and sent the report, but Closing Day was never filled in --
+            # the "Ready to close" example.
+            report_sent = begin + timedelta(days=random.randint(14, 60))
+            if report_sent > year_end - timedelta(days=5):
+                report_sent = year_end - timedelta(days=5)
             closing = None
+        else:
+            # everyone else finishes and closes cleanly within the year, so the "needs
+            # attention" section stays limited to the handful of examples above.
+            report_sent = begin + timedelta(days=random.randint(7, 90))
+            if report_sent > year_end - timedelta(days=5):
+                report_sent = year_end - timedelta(days=5)
+            closing = report_sent + timedelta(days=random.randint(0, 5))
+            if closing > year_end:
+                closing = year_end
         if trigger == "Inherited Project":
             # inherited work is attributed to when she/they actually picked it up, which can
             # sit a little after the (older) registration date
@@ -133,10 +153,10 @@ def build_project_tracker():
             "Lead Time: Request to Project Start": "",
             "Final Report Sent": _fmt(report_sent),
             "Closing Day": _fmt(closing),
-            "Hours in Timesheet": round(random.uniform(2, 70), 1),
-            "Number of Reports": random.randint(0, 3),
-            "Number of Meetings": random.randint(0, 6),
-            "Price Charged": random.choice([0, 0, 0, 150, 300, 450, 600]),
+            "Hours in Timesheet": 0.0 if tag == NOT_STARTED_TAG else round(random.uniform(2, 70), 1),
+            "Number of Reports": 0 if tag == NOT_STARTED_TAG else random.randint(0, 3),
+            "Number of Meetings": 0 if tag == NOT_STARTED_TAG else random.randint(0, 6),
+            "Price Charged": 0 if tag == NOT_STARTED_TAG else random.choice([0, 0, 0, 150, 300, 450, 600]),
             "Non-quantifiable outputs": random.choice(NON_QUANT_OUTPUTS),
             "Notas": "",
         })
@@ -236,6 +256,9 @@ def build_time_log(projects):
     for _, p in projects.iterrows():
         begin = p["Begining"]
         if pd.isna(begin):
+            continue
+        if p["Project tag"] == NOT_STARTED_TAG:
+            # deliberately never logged against -- the "Not started" needs-attention example
             continue
         begin_d = begin.date()
         end_raw = p["Final Report Sent"] if pd.notna(p["Final Report Sent"]) else p["Closing Day"]
