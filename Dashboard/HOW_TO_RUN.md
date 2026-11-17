@@ -28,11 +28,11 @@ It should open straight into a full fake year of data — no setup step, no miss
 errors.
 
 **A clone is a one-time snapshot, not a live link** — it won't pick up later pushes on
-its own. If you already cloned it before and want the latest, either pull into that same
-folder:
+its own. If you already cloned it before and want the latest, go to the clone's root
+folder (the one with `.git` in it — one level up if you're sitting inside `Dashboard`)
+and pull:
 
 ```powershell
-cd <path to your clone>\KPI_dashboard_demo
 git pull
 ```
 
