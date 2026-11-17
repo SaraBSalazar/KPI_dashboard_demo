@@ -164,3 +164,10 @@ institution-specific setup:
   link as defaults so its scheduled task runs unmodified. This copy ships with no
   defaults for any of those — fill them in via command-line parameters (see the comment
   at the top of the script, and [HOW_TO_RUN.md](Dashboard/HOW_TO_RUN.md)) before using it.
+
+---
+
+## License
+
+[MIT](LICENSE) — use, copy, modify, and redistribute freely; just keep the copyright
+notice and license text, and take it as-is (no warranty).
