@@ -25,6 +25,13 @@ below for exactly what changed going from one to the other.
 | ![Special Projects goals chart](screenshots/special_projects.png) | ![Tools & AI Skills gallery](screenshots/tools.png) |
 | Special Projects: goal ratings by effort/impact, with upcoming and overdue milestones. | Tools & AI Skills: a filterable gallery of tools and automations built. |
 
+### Video walkthrough
+
+[![Watch a ~90s walkthrough of the dashboard](media/dashboard_tour_thumb.png)](media/dashboard_tour.mp4)
+
+A silent, captioned tour — Week/Month/Year, Needs attention, Turnaround, Special
+Projects, Tools, and Add Data. Click the image to play (GitHub's own video player).
+
 ---
 
 ## Quick start
