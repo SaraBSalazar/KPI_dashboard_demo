@@ -1,4 +1,6 @@
-streamlit
-pandas
-plotly
-openpyxl
+# Lower bound = the version this was last tested against; upper bound = next major, since
+# a major bump is the one kind of update likely to break something here without warning.
+streamlit>=1.51,<2
+pandas>=2.3,<3
+plotly>=6.3,<7
+openpyxl>=3.1,<4

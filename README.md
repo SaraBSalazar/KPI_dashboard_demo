@@ -1,5 +1,7 @@
 # KPI dashboard (demo)
 
+[![Smoke test](https://github.com/SaraBSalazar/KPI_dashboard_demo/actions/workflows/test.yml/badge.svg)](https://github.com/SaraBSalazar/KPI_dashboard_demo/actions/workflows/test.yml)
+
 A Streamlit dashboard for tracking the work of a small analysis/consulting team: a
 personal time log, a project tracker with turnaround metrics, a goals/ratings view for
 longer-running initiatives, and a tools inventory — plus a static, read-only snapshot
@@ -11,6 +13,17 @@ dates. Nothing here is real. It exists so the dashboard itself (the code, the ch
 UX choices) can be shared, cloned, and adapted without exposing anyone's actual business
 data. See [Differences from the private version](#differences-from-the-private-version)
 below for exactly what changed going from one to the other.
+
+---
+
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Week view — hours and category breakdown](screenshots/week.png) | ![Project turnaround — lifecycle and pauses](screenshots/turnaround.png) |
+| Week tab: hours by project and category, week-over-week change, editable time log. | Projects Review: per-project turnaround from first contact to delivery, pauses drawn in. |
+| ![Special Projects goals chart](screenshots/special_projects.png) | ![Tools & AI Skills gallery](screenshots/tools.png) |
+| Special Projects: goal ratings by effort/impact, with upcoming and overdue milestones. | Tools & AI Skills: a filterable gallery of tools and automations built. |
 
 ---
 
