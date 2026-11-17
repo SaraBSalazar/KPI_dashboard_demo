@@ -44,7 +44,11 @@ Remove-Item -Recurse -Force KPI_dashboard_demo
 git clone https://github.com/SaraBSalazar/KPI_dashboard_demo.git
 ```
 
-What to actually check on each page:
+**Fast check:** `python test_dashboard.py` (from the `Dashboard` folder) loads every page's
+script with Streamlit's own `AppTest` and confirms none of them raised — seconds, no
+browser needed. It only catches "a page crashed," not "a chart looks wrong," so it's a
+first check, not a replacement for actually clicking around. What to check by hand, on
+each page:
 
 - **Week / Month / Year** (main page): switch tabs, pick a different week from the
   dropdown, confirm charts render and numbers look sane.
