@@ -110,15 +110,15 @@ with tab_week:
         # Headline numbers for the selected week. No week-on-week delta on the hours tile --
         # the "Change from last week" charts below already cover that comparison.
         total_week_hours = week_df["Hours (exact)"].sum()
-        agendo_week = raw_df.loc[df.index[df["_week_sort"] == selected_start], "Agendo updated"].astype(str).str.strip()
-        n_tracked = int((agendo_week.isin(["Yes", "No"])).sum())
-        n_updated = int((agendo_week == "Yes").sum())
+        timesheet_week = raw_df.loc[df.index[df["_week_sort"] == selected_start], "Timesheet updated"].astype(str).str.strip()
+        n_tracked = int((timesheet_week.isin(["Yes", "No"])).sum())
+        n_updated = int((timesheet_week == "Yes").sum())
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Hours logged", kd.format_hm(total_week_hours))
         m2.metric("Projects touched", int(week_df["Project"].nunique()))
         m3.metric("Entries", int(len(week_df)))
-        m4.metric("Agendo updated", f"{n_updated}/{n_tracked}" if n_tracked else "—",
-                  help="Week entries marked 'Yes' in the Agendo column of the time log below.")
+        m4.metric("Timesheet updated", f"{n_updated}/{n_tracked}" if n_tracked else "—",
+                  help="Week entries marked 'Yes' in the Timesheet column of the time log below.")
 
         anchor("week-hours")
         c1, c2 = st.columns([1.3, 1])
@@ -175,7 +175,7 @@ with tab_week:
         # order, so saving maps each editor row back to the right file row regardless.
         SORT_COLS = {
             "Project": "Weekly entry name (chart)", "Category": "Category",
-            "Major task": "Major task name (chart)", "Hrs": "Hrs", "Agendo": "Agendo updated",
+            "Major task": "Major task name (chart)", "Hrs": "Hrs", "Timesheet": "Timesheet updated",
         }
         if not READONLY:
             # Re-sorting remounts the editor under a new key, which would silently discard
@@ -289,7 +289,7 @@ with tab_week:
                 editor_df = pd.concat([editor_df, pd.DataFrame({
                     col: pd.Series(
                         [[] for _ in range(n_blank)] if col in TAG_COLS
-                        else (["No"] * n_blank if col == "Agendo updated" else [None] * n_blank),
+                        else (["No"] * n_blank if col == "Timesheet updated" else [None] * n_blank),
                         index=blank_idx, dtype=object if col in TAG_COLS else editor_df[col].dtype)
                     for col in editor_df.columns}, index=blank_idx)])
             editor_df.insert(0, "🗑", False)
@@ -306,8 +306,8 @@ with tab_week:
                        for col, (label, _kind, opts) in TAG_COLS.items()},
                     "Hrs": st.column_config.NumberColumn("Hrs", min_value=0, step=1),
                     "Min": st.column_config.NumberColumn("Min", min_value=0, max_value=59, step=1),
-                    "Agendo updated": st.column_config.SelectboxColumn(
-                        "Agendo", options=["Yes", "No"], help="Has this time been entered in Agendo?"),
+                    "Timesheet updated": st.column_config.SelectboxColumn(
+                        "Timesheet", options=["Yes", "No"], help="Has this time been entered in Timesheet?"),
                 },
             )
 

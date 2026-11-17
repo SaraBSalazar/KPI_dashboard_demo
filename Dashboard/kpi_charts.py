@@ -534,9 +534,9 @@ def fig_category_weekly_distribution(df_period, category_order, category_colors,
 def fig_hours_by_project(projects, df_period=None):
     """Hours per project, preferring the personal time log (`df_period`, already filtered
     to this reporting period) for any project it covers -- updates live as hours get
-    logged -- and falling back to the project tracker's own 'Hours in Agendo' column
+    logged -- and falling back to the project tracker's own 'Hours in Timesheet' column
     (clipped at 0: it can show a stale negative/blank value for a just-registered project
-    before Agendo settles) for a project the time log doesn't cover, e.g. one from a period
+    before Timesheet settles) for a project the time log doesn't cover, e.g. one from a period
     that predates the time log entirely."""
     project_desc = projects.set_index("Project tag")["Short Description"] if "Short Description" in projects.columns else pd.Series(dtype=str)
 
@@ -562,7 +562,7 @@ def fig_hours_by_project(projects, df_period=None):
     else:
         _empty(fig, "No hours recorded yet")
     fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(title_text="Hours in Agendo", showgrid=True, gridcolor=TL_GRID)
+    fig.update_yaxes(title_text="Hours in Timesheet", showgrid=True, gridcolor=TL_GRID)
     fig.update_layout(**base_layout("Hours by project", width=900, height=450, bgcolor=TL_SURFACE, font_color=TL_INK_PRIMARY))
     return fig
 
@@ -684,7 +684,7 @@ def fig_received_vs_finished(projects, period_months, period_start, truncate_at)
         x=month_labels, y=received.values, marker_color=RECEIVED_COLOR, width=0.6,
         text=[str(v) if v > 0 else "" for v in received.values],
         textposition="inside", insidetextanchor="end", textfont=dict(color="white", size=13),
-        name="Received (registered in Agendo)",
+        name="Received (registered in Timesheet)",
         customdata=received_hover,
         hovertemplate="<b>%{x} — Received: %{y}</b><br>%{customdata}<extra></extra>",
     ))
@@ -727,7 +727,7 @@ def fig_project_complexity(projects, df_period=None):
     flagged as "not yet recorded" in the hover, so a real zero and "not tracked yet" still
     read differently on inspection even though they share a position. Bubble size and the
     hover's hours line use the same time-log-preferring hours as "Hours by project" and
-    "year at a glance" (see project_hours_with_source), not the raw Agendo column alone."""
+    "year at a glance" (see project_hours_with_source), not the raw Timesheet column alone."""
     bubble = projects.copy()
     bubble["Number of Reports"] = pd.to_numeric(bubble.get("Number of Reports"), errors="coerce")
     bubble["Number of Meetings"] = pd.to_numeric(bubble.get("Number of Meetings"), errors="coerce")

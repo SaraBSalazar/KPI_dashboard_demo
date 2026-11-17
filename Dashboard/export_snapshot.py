@@ -399,26 +399,26 @@ def period_panels(pkey, period, df, raw_df, category_order, cat_colors, task_cat
             start = pd.Timestamp(value)
             label = _labels[start]
             week_df = df[df["_week_sort"] == start]
-            agendo_col = raw_df.loc[df.index[df["_week_sort"] == start],
-                                    "Agendo updated"].astype(str).str.strip()
-            n_tracked = int(agendo_col.isin(["Yes", "No"]).sum())
-            n_updated = int((agendo_col == "Yes").sum())
+            timesheet_col = raw_df.loc[df.index[df["_week_sort"] == start],
+                                    "Timesheet updated"].astype(str).str.strip()
+            n_tracked = int(timesheet_col.isin(["Yes", "No"]).sum())
+            n_updated = int((timesheet_col == "Yes").sum())
             rows = []
             for _, r in week_df.sort_values("Hours (exact)", ascending=False).iterrows():
                 raw_r = raw_df.loc[r.name]
-                agendo = str(raw_r.get("Agendo updated", "") or "").strip()
-                agendo_html = (f'<span class="pill {"yes" if agendo == "Yes" else "no"}">{esc(agendo)}</span>'
-                               if agendo in ("Yes", "No") else "")
+                timesheet = str(raw_r.get("Timesheet updated", "") or "").strip()
+                timesheet_html = (f'<span class="pill {"yes" if timesheet == "Yes" else "no"}">{esc(timesheet)}</span>'
+                               if timesheet in ("Yes", "No") else "")
                 rows.append(f"<tr><td>{esc(r['Project'])}</td><td>{esc(r['Category'])}</td>"
                             f"<td>{esc(r['Major task name (chart)'])}</td>"
                             f"<td class=\"num\">{esc(kd.format_hm(r['Hours (exact)']))}</td>"
-                            f"<td>{agendo_html}</td><td>{esc(raw_r.get('Notes', ''))}</td></tr>")
+                            f"<td>{timesheet_html}</td><td>{esc(raw_r.get('Notes', ''))}</td></tr>")
             return (
                 tiles(
                     tile("Hours logged", kd.format_hm(week_df["Hours (exact)"].sum())),
                     tile("Projects touched", int(week_df["Project"].nunique())),
                     tile("Entries", int(len(week_df))),
-                    tile("Agendo updated", f"{n_updated}/{n_tracked}" if n_tracked else "-",
+                    tile("Timesheet updated", f"{n_updated}/{n_tracked}" if n_tracked else "-",
                          "entries marked Yes in the time log"),
                 )
                 + '<div class="grid-2">'
@@ -431,7 +431,7 @@ def period_panels(pkey, period, df, raw_df, category_order, cat_colors, task_cat
                     _w, _l, task_category, category_order, cat_colors(d)))
                 + f'<h3>Time log — week of {esc(label)}</h3>'
                 '<div class="tablewrap"><table><thead><tr><th>Project</th><th>Category</th>'
-                '<th>Major task</th><th>Time</th><th>Agendo</th><th>Notes</th></tr></thead>'
+                '<th>Major task</th><th>Time</th><th>Timesheet</th><th>Notes</th></tr></thead>'
                 f'<tbody>{"".join(rows)}</tbody></table></div>'
             )
 
@@ -532,7 +532,7 @@ def period_panels(pkey, period, df, raw_df, category_order, cat_colors, task_cat
              "first contact → final report"),
         tile("Typical time to deliver", kd.format_days(stats["median_working"]),
              "the real workload time"),
-        tile("Agendo tracking", kd.format_days(effort["median_agendo"]),
+        tile("Timesheet tracking", kd.format_days(effort["median_timesheet"]),
              "Register Project → Closing Day"),
     ))
     turn.append(note('<strong>Typical total turnaround by project size</strong> — what to '

@@ -1,7 +1,7 @@
 """Add Data — quick-add and light-edit forms for the project tracker and the
 consultation-meetings log.
 
-Deliberately NOT a full spreadsheet editor: "Hours in Agendo" in the project sheet holds
+Deliberately NOT a full spreadsheet editor: "Hours in Timesheet" in the project sheet holds
 live Excel formulas (confirmed with openpyxl), so a pandas-based rewrite of the whole sheet
 would flatten every row's formula to a frozen static number. Every write here goes through
 openpyxl and only ever touches the one row being added or edited -- and the edit form
@@ -155,7 +155,7 @@ with st.form("new_project_form"):
 
     st.caption(
         "Project Outputs is here because the expected output is usually known upfront -- "
-        "leave it empty if it isn't yet. Hours in Agendo, Number of Reports/Meetings, Final "
+        "leave it empty if it isn't yet. Hours in Timesheet, Number of Reports/Meetings, Final "
         "Report Sent, Closing Day, and the rest are left blank -- fill those in as the "
         "project actually progresses (via **Edit a project** below; the hours column is a "
         "live formula and populates on its own)."
@@ -196,7 +196,7 @@ st.divider()
 anchor("edit-project")
 st.subheader(f"Edit a project — {period_label}")
 st.caption(
-    "Hours in Agendo isn't editable here -- it's a live Agendo formula; edit it in Excel "
+    "Hours in Timesheet isn't editable here -- it's a live Timesheet formula; edit it in Excel "
     "only. Number of Reports and Number of Meetings are the two axes of the complexity "
     "bubble chart on **Projects Review**, so keeping them current is what puts a project "
     "on that chart."

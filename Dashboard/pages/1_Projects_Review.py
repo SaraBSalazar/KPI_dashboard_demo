@@ -69,7 +69,7 @@ with c2, st.container(border=True, height=CARD_HEIGHT):
     st.metric("Consultation meetings", glance["meetings_total"])
     st.caption(f"*{kd.format_hm(glance['meeting_hours'])} logged*")
 with c3, st.container(border=True, height=CARD_HEIGHT):
-    st.metric("Hours in Agendo", kd.format_hm(glance["total_hours"]))
+    st.metric("Hours in Timesheet", kd.format_hm(glance["total_hours"]))
     st.caption(f"*{kd.format_hm(glance['project_hours'])} projects · {kd.format_hm(glance['meeting_hours'])} consulting*")
 with c4, st.container(border=True, height=CARD_HEIGHT):
     st.metric("Groups reached", glance["groups_total"])
@@ -111,14 +111,14 @@ st.caption(
     "How long projects take — **waiting** = first contact until the tracker's work start, "
     "**working** = from there until the final report. The **◆ diamond** marks when work "
     "*really* began per the time log (first week with hours), which can sit before or after "
-    f"the tracker's Agendo-fed date; pauses ({kd.PAUSE_MIN_WEEKS}+ week"
+    f"the tracker's Timesheet-fed date; pauses ({kd.PAUSE_MIN_WEEKS}+ week"
     f"{'' if kd.PAUSE_MIN_WEEKS == 1 else 's'} with no hours) show in gray."
 )
 with st.expander("ℹ️ How these numbers are calculated"):
     st.markdown(f"""
 - **First contact** — the tracker's *First User Meeting/Shared Data* date, or *Register
   Project* when that's blank.
-- **Work started** — the tracker's *Begining* date (the formal record, fed by Agendo), used
+- **Work started** — the tracker's *Begining* date (the formal record, fed by Timesheet), used
   for the waiting/working stages and the medians below, exactly as before.
 - **Really working since (◆)** — the start of the project's **first week with logged hours**
   in the personal time log. It doesn't change any of the day figures; it sits on the chart
@@ -156,7 +156,7 @@ with st.expander("ℹ️ How these numbers are calculated"):
   projects; forgiven pauses (above) are subtracted rather than excluding the project.
 - **The second row is three ways of measuring the same projects' duration** — the headline
   *total turnaround* (first contact → final report), the work-only span inside it (*time to
-  deliver*), and the administrative span (*Agendo tracking*, Register Project → Closing Day,
+  deliver*), and the administrative span (*Timesheet tracking*, Register Project → Closing Day,
   which starts after first contact and runs past the report to the close).
 - **Turnaround by project size** answers "how long for a job this size?" by splitting the
   projects into bands — under 10 h, 10–30 h, over 30 h — and taking a median in each. It's
@@ -165,8 +165,8 @@ with st.expander("ℹ️ How these numbers are calculated"):
   project sitting in a large project's range. Band edges are fixed round numbers, not this
   period's own terciles, so a band means the same thing from year to year.
 - **Hours** behind it come from the time log where it covers the period and the tracker's
-  Agendo column otherwise — for any period that predates the time log, every hours figure
-  here is Agendo. Projects with no hours on record sit it out.
+  Timesheet column otherwise — for any period that predates the time log, every hours figure
+  here is Timesheet. Projects with no hours on record sit it out.
 """)
 pause_notes = kd.load_pause_notes()
 lead_df = kd.lead_time_table(projects, df_period_for_hours, period_end=period["end"], pause_notes=pause_notes)
@@ -192,7 +192,7 @@ st.caption(kd.lead_time_coverage_note(lead_cov))
 
 # Second row -- total turnaround leads, because it is the headline figure and the one the
 # effort-weighted tile at the end re-averages; then the work-only span inside it, then the
-# administrative span Agendo tracks.
+# administrative span Timesheet tracks.
 lead_effort = kd.lead_time_effort(lead_df)
 ef1, ef2, ef3, ef4 = st.columns(4)
 ef1.metric("Typical total turnaround", kd.format_days(lead_stats["median_total"]),
@@ -203,8 +203,8 @@ ef2.metric("Typical time to deliver", kd.format_days(lead_stats["median_working"
            help="The real workload time — median days from work starting to the final "
                 "report, for delivered projects. The work-only part of the total turnaround "
                 "on its left. Calendar days across the working span, not hours of effort.")
-ef3.metric("Agendo tracking", kd.format_days(lead_effort["median_agendo"]),
-           help="Median days from Register Project to Closing Day — the span Agendo tracks. "
+ef3.metric("Timesheet tracking", kd.format_days(lead_effort["median_timesheet"]),
+           help="Median days from Register Project to Closing Day — the span Timesheet tracks. "
                 "Longer than the two on its left by design: it starts at registration and "
                 "runs past the report to the administrative close.")
 
@@ -222,7 +222,7 @@ for col, band in zip(st.columns(len(size_bands)), size_bands):
                help="Median total turnaround — first contact to final report — for "
                     f"delivered projects of **{band['range_label']}**.\n\n"
                     "Hours come from the time log where it covers the period, and the "
-                    "tracker's Agendo column otherwise. A project with no hours on record "
+                    "tracker's Timesheet column otherwise. A project with no hours on record "
                     "can't be placed in a band and sits these out.")
 
 flagged = lead_df[lead_df["flag"] != ""] if len(lead_df) else lead_df
@@ -311,13 +311,13 @@ if paused_rows:
 
 st.divider()
 anchor("hours-by-project")
-st.caption("Hours use the personal time log when a project has entries there, falling back to Agendo otherwise (hover a bar to see which).")
+st.caption("Hours use the personal time log when a project has entries there, falling back to Timesheet otherwise (hover a bar to see which).")
 st.plotly_chart(kc.fig_hours_by_project(projects, df_period_for_hours), width="stretch")
 
 if not READONLY:
     if st.button("🔄 Write these hours into Excel as a 'Hours (auto)' column", key=f"sync_hours_{period_label}"):
         kd.sync_auto_hours_column(period["file"], period["sheet"], projects, df_period_for_hours)
-        st.success(f"Wrote '{kd.AUTO_HOURS_COL}' to {period['sheet']}. 'Hours in Agendo' itself was not touched.")
+        st.success(f"Wrote '{kd.AUTO_HOURS_COL}' to {period['sheet']}. 'Hours in Timesheet' itself was not touched.")
         st.rerun()
 anchor("project-complexity")
 st.plotly_chart(kc.fig_project_complexity(projects, df_period_for_hours), width="stretch")

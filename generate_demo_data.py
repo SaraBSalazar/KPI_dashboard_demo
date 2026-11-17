@@ -133,7 +133,7 @@ def build_project_tracker():
             "Lead Time: Request to Project Start": "",
             "Final Report Sent": _fmt(report_sent),
             "Closing Day": _fmt(closing),
-            "Hours in Agendo": round(random.uniform(2, 70), 1),
+            "Hours in Timesheet": round(random.uniform(2, 70), 1),
             "Number of Reports": random.randint(0, 3),
             "Number of Meetings": random.randint(0, 6),
             "Price Charged": random.choice([0, 0, 0, 150, 300, 450, 600]),
@@ -219,7 +219,7 @@ def build_time_log(projects):
         nonlocal entry_id
         month_name, week_label = _week_label(monday)
         rows.append({
-            "Entry": f"DEMO_{entry_id:03d}", "Agendo updated": random.choice(["Yes", "Yes", "Yes", "No"]),
+            "Entry": f"DEMO_{entry_id:03d}", "Timesheet updated": random.choice(["Yes", "Yes", "Yes", "No"]),
             "Category": category, "Hours (exact)": hrs + mins / 60, "Major task name (chart)": major_task,
             "Hrs": hrs, "Min": mins, "Month": month_name, "Month and year (chart)": f"{month_name} {YEAR}",
             "Notes": "", "Week": week_label, "Weekly entry name (chart)": tag, "Year": YEAR,
@@ -459,12 +459,12 @@ PROJECT_COLS = [
     "Project tag", "Short Description", "User Type", "User Location", "Grupo", "User",
     "Project Outputs", "Type of Data", "Project Trigger", "First User Meeting/Shared Data",
     "Register Project", "Begining", "Lead Time: Request to Project Start", "Final Report Sent",
-    "Closing Day", "Hours in Agendo", "Number of Reports", "Number of Meetings", "Price Charged",
+    "Closing Day", "Hours in Timesheet", "Number of Reports", "Number of Meetings", "Price Charged",
     "Non-quantifiable outputs", "Notas",
 ]
 MEETING_COLS = ["Project tag", "User Type", "Date", "User Location", "Grupo", "User",
                 "Meeting Outputs", "Time"]
-TIMELOG_COLS = ["Entry", "Agendo updated", "Category", "Hours (exact)", "Major task name (chart)",
+TIMELOG_COLS = ["Entry", "Timesheet updated", "Category", "Hours (exact)", "Major task name (chart)",
                  "Hrs", "Min", "Month", "Month and year (chart)", "Notes", "Week",
                  "Weekly entry name (chart)", "Year", "Unnamed: 13"]
 GOALS_COLS = ["Goal", "Project", "Description", "Advantages", "Limitations", "Future gain",

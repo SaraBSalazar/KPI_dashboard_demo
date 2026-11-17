@@ -54,7 +54,7 @@ TL_PALETTE = ["#1f5c99", "#c1622e", "#1a8f6b", "#b8860b", "#b5577a", "#3a7d2c", 
 TL_PALETTE_DARK = ["#4a84c9", "#c76a35", "#29ab82", "#a87910", "#b2567d", "#5c9c4a", "#7a68b3", "#c75555"]
 
 RAW_COLUMNS = [
-    "Entry", "Agendo updated", "Category", "Hours (exact)", "Major task name (chart)",
+    "Entry", "Timesheet updated", "Category", "Hours (exact)", "Major task name (chart)",
     "Hrs", "Min", "", "Month", "Month and year (chart)", "Notes", "Week",
     "Weekly entry name (chart)", "Year",
 ]
@@ -112,7 +112,7 @@ Several distinct dates feed this chart, each answering a different question:
   it actually began (not always the same day).
 - *Final Report Sent* — the real deliverable going out.
 - *Closing Day* — the administrative close, which can lag the report by days or weeks.
-- *Register → Closing Day* — the full span Agendo tracks, used for the effort view on the
+- *Register → Closing Day* — the full span Timesheet tracks, used for the effort view on the
   Projects Review page rather than this chart.
 """
 
@@ -346,7 +346,7 @@ def load_projects(xlsx_path, sheet_name):
     projects.loc[bad_close, "Closing Day"] = pd.NaT
 
     projects = _fill_blank_formula_cells(
-        xlsx_path, sheet_name, projects, ["Hours in Agendo", "Number of Meetings", "Number of Reports"],
+        xlsx_path, sheet_name, projects, ["Hours in Timesheet", "Number of Meetings", "Number of Reports"],
     )
     return projects
 
@@ -370,7 +370,7 @@ def ordinal_week_label(week_start):
 
 EDIT_COLS = [
     "Weekly entry name (chart)", "Category", "Major task name (chart)",
-    "Hrs", "Min", "Agendo updated", "Notes",
+    "Hrs", "Min", "Timesheet updated", "Notes",
 ]
 
 
@@ -417,10 +417,10 @@ def apply_week_edits(raw_df, orig_index, edited, week_start):
         if not str(r.get("Weekly entry name (chart)", "") or "").strip():
             continue
         hrs, mins = _row_hours(r)
-        agendo = str(r.get("Agendo updated", "") or "").strip()
+        timesheet = str(r.get("Timesheet updated", "") or "").strip()
         rows_to_add.append({
             "Entry": r.get("Weekly entry name (chart)", ""),
-            "Agendo updated": agendo if agendo in ("Yes", "No") else "No",
+            "Timesheet updated": timesheet if timesheet in ("Yes", "No") else "No",
             "Category": r.get("Category", ""),
             "Hours (exact)": hrs + mins / 60,
             "Major task name (chart)": r.get("Major task name (chart)", ""),
@@ -955,7 +955,7 @@ def new_beyond_card():
 
 
 # --- Quick-add for the project tracker -----------------------------------------------------
-# "Hours in Agendo" holds live Excel formulas in the project sheet (confirmed by inspecting
+# "Hours in Timesheet" holds live Excel formulas in the project sheet (confirmed by inspecting
 # the sheet with openpyxl, data_only=False) -- a pandas-based rewrite of the whole sheet
 # would flatten every row's formula to a frozen static number. These functions use openpyxl
 # to touch only the one row being added or edited, leaving every other cell -- formulas
@@ -998,12 +998,12 @@ def append_project_row(xlsx_path, sheet_name, values):
     wb.save(xlsx_path)
 
 
-# Only "Hours in Agendo" is genuinely formula-driven. "Number of Meetings" was long treated
+# Only "Hours in Timesheet" is genuinely formula-driven. "Number of Meetings" was long treated
 # as one too, but inspecting every KPI*.xlsx sheet (openpyxl, data_only=False) shows it
 # holds hand-typed numbers -- at most a typed sum like "=2+1", which is shorthand, not a live
 # link. It feeds the complexity bubble chart's y-axis, so it is editable (see
 # update_project_row's caller, which only writes it when the value actually changed).
-PROJECT_FORMULA_COLS = {"Hours in Agendo"}
+PROJECT_FORMULA_COLS = {"Hours in Timesheet"}
 
 
 def project_field_options(periods, col):
@@ -1035,7 +1035,7 @@ def meeting_field_options(periods, col):
 
 def update_project_row(xlsx_path, sheet_name, project_tag, values):
     """Update specific hand-maintained columns of an EXISTING project row (found by its
-    Project tag) in place. Refuses to touch Hours in Agendo -- that one is a live Excel
+    Project tag) in place. Refuses to touch Hours in Timesheet -- that one is a live Excel
     formula (see append_project_row) -- or a tag that isn't found."""
     bad = set(values) & PROJECT_FORMULA_COLS
     if bad:
@@ -1067,8 +1067,8 @@ def sync_auto_hours_column(xlsx_path, sheet_name, projects, df_period=None):
     """Write the same time-log-preferring hours used throughout the dashboard (see
     project_hours_with_source) into a dedicated 'Hours (auto)' column -- added at the end
     of the sheet if it doesn't exist yet. Deliberately a SEPARATE column rather than
-    overwriting 'Hours in Agendo': that one may hold a real (if currently just a simple
-    typed formula) Agendo-linked value, and overwriting it would destroy that permanently
+    overwriting 'Hours in Timesheet': that one may hold a real (if currently just a simple
+    typed formula) Timesheet-linked value, and overwriting it would destroy that permanently
     with no way back. This only ever touches the 'Hours (auto)' column -- nothing else on
     the sheet, formulas included, is affected. Explicit/on-demand (a button click), not run
     automatically on every page load, so the file is never written to just from viewing."""
@@ -1145,15 +1145,15 @@ def effective_workload_start(projects):
 
 def project_hours_with_source(projects, df_period=None):
     """Per-project hours, as {project_tag: hours} and {project_tag: source}, source being
-    'time log' or 'Agendo'. Prefers the personal time log (`df_period`, already filtered to
+    'time log' or 'Timesheet'. Prefers the personal time log (`df_period`, already filtered to
     the relevant reporting period) for any project it covers -- this updates live as hours
-    get logged -- and falls back to the project tracker's own 'Hours in Agendo' column
+    get logged -- and falls back to the project tracker's own 'Hours in Timesheet' column
     (clipped at 0: a just-registered project can show a stale negative/blank value before
-    Agendo settles) for a project the time log doesn't cover, e.g. one from a period that
+    Timesheet settles) for a project the time log doesn't cover, e.g. one from a period that
     predates the time log entirely. Shared by the 'Hours by project' chart and the 'year at
     a glance' cards so both report the same total."""
-    agendo_hours = pd.to_numeric(projects.get("Hours in Agendo"), errors="coerce").fillna(0).clip(lower=0)
-    agendo_hours.index = projects["Project tag"]
+    timesheet_hours = pd.to_numeric(projects.get("Hours in Timesheet"), errors="coerce").fillna(0).clip(lower=0)
+    timesheet_hours.index = projects["Project tag"]
 
     timelog_hours = pd.Series(dtype=float)
     if df_period is not None and len(df_period):
@@ -1163,12 +1163,12 @@ def project_hours_with_source(projects, df_period=None):
         )
 
     hours, source = {}, {}
-    for tag in sorted(set(agendo_hours.index) | set(timelog_hours.index)):
+    for tag in sorted(set(timesheet_hours.index) | set(timelog_hours.index)):
         tl = timelog_hours.get(tag, 0.0)
         if tl > 0:
             hours[tag], source[tag] = tl, "time log"
         else:
-            hours[tag], source[tag] = agendo_hours.get(tag, 0.0), "Agendo"
+            hours[tag], source[tag] = timesheet_hours.get(tag, 0.0), "Timesheet"
     return hours, source
 
 
@@ -1241,7 +1241,7 @@ PAUSE_MIN_WEEKS = 1  # a single empty week between two active ones already reads
 
 def project_activity(df_period):
     """Per-project weekly activity from the personal time log: when work really started and
-    stopped, regardless of what the tracker's Agendo-fed 'Begining' says.
+    stopped, regardless of what the tracker's Timesheet-fed 'Begining' says.
 
     Returns {project: {"first": ts, "last_end": ts, "n_active": int, "gaps": [...]}} where
     `first` is the start of the first week with logged hours, `last_end` the end of the last
@@ -1298,7 +1298,7 @@ def lead_time_table(projects, df_period=None, period_end=None, pause_notes=None)
     When `df_period` is given, each row also carries what the personal time log says —
     not replacing the tracker's dates, but annotating them:
       real_start   = start of the first week with logged hours: when work *really* began,
-                     which can sit before or after the tracker's Agendo-fed 'Begining'.
+                     which can sit before or after the tracker's Timesheet-fed 'Begining'.
                      NaT when the project has no logged hours — or when it was already
                      active in the log's first-ever week with an earlier 'Begining'
                      (`pre_log` True then: the real start predates the log, so the log
@@ -1395,7 +1395,7 @@ def lead_time_table(projects, df_period=None, period_end=None, pause_notes=None)
             "working_days_counted": working_counted,
             "total_days_counted": waiting + working_counted,
             "real_start": real_start, "pre_log": pre_log,
-            # Register -> Closing Day is the span Agendo tracks, which is neither of the two
+            # Register -> Closing Day is the span Timesheet tracks, which is neither of the two
             # stages above: it starts at registration (after first contact) and runs past the
             # report to the administrative close.
             "register": p.get("Register Project"), "closing": p.get("Closing Day"),
@@ -1552,7 +1552,7 @@ def lead_time_effort(lead_df):
     went in rather than how much calendar passed. Same basis as the medians there -- usable
     dates, internal projects left out -- so the two rows describe one population.
 
-      median_agendo    -- Register Project -> Closing Day, the span Agendo tracks. Longer
+      median_timesheet    -- Register Project -> Closing Day, the span Timesheet tracks. Longer
                           than the delivery medians by design: it runs past the report to
                           the administrative close.
 
@@ -1561,16 +1561,16 @@ def lead_time_effort(lead_df):
     if len(clean) and "internal" in clean.columns:
         clean = clean[~clean["internal"].fillna(False).astype(bool)]
     if not len(clean):
-        return {"median_agendo": None, "n_agendo": 0}
+        return {"median_timesheet": None, "n_timesheet": 0}
 
     def med(series):
         series = pd.to_numeric(series, errors="coerce").dropna()
         return float(series.median()) if len(series) else None
 
-    agendo = clean[clean["register"].notna() & clean["closing"].notna()]
-    agendo_days = (agendo["closing"] - agendo["register"]).dt.days if len(agendo) else pd.Series(dtype=float)
+    timesheet = clean[clean["register"].notna() & clean["closing"].notna()]
+    timesheet_days = (timesheet["closing"] - timesheet["register"]).dt.days if len(timesheet) else pd.Series(dtype=float)
 
-    return {"median_agendo": med(agendo_days), "n_agendo": int(len(agendo))}
+    return {"median_timesheet": med(timesheet_days), "n_timesheet": int(len(timesheet))}
 
 
 # Hours that split a project into small / medium / large. Fixed round numbers rather than
