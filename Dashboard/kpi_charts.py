@@ -580,6 +580,37 @@ def _project_bullets(projects, mask, empty_text="(none)"):
     return "<br>".join(lines)
 
 
+def _finished_bullets(projects, mask, empty_text="No projects finished"):
+    """Like _project_bullets, but for the "Finished" trace specifically: names the actual
+    bureaucratic closing date, and -- when the final report went out on a different day --
+    how long closing lagged behind the real deliverable, so "finished this month" doesn't
+    read as "the work happened this month" when it was really just the paperwork catching
+    up (see kd.closing_gap_summary for the chart-wide version of this same distinction)."""
+    sub = projects.loc[mask]
+    if not len(sub):
+        return empty_text
+    has_desc = "Short Description" in projects.columns
+    has_report = "Final Report Sent" in projects.columns
+    lines = []
+    for _, r in sub.iterrows():
+        desc = r.get("Short Description") if has_desc else None
+        line = f"• {r['Project tag']}" + (f" — {desc}" if pd.notna(desc) and desc else "")
+        closing = r.get("Closing Day")
+        if pd.notna(closing):
+            line += f" — closed {pd.Timestamp(closing).strftime('%d %b')}"
+        report = r.get("Final Report Sent") if has_report else None
+        if pd.notna(report) and pd.notna(closing):
+            gap = (pd.Timestamp(closing) - pd.Timestamp(report)).days
+            if gap > 0:
+                line += f" (report sent {gap}d earlier)"
+            else:
+                line += " (same day as final report)"
+        elif has_report and pd.isna(report):
+            line += " (no report sent -- internal/no-deliverable work)"
+        lines.append(line)
+    return "<br>".join(lines)
+
+
 def fig_received_vs_finished(projects, period_months, period_start, truncate_at):
     """`truncate_at` is the last period-month whose workload count is a settled fact
     (None to show every month, e.g. for a fully-closed past period). "Received" uses
@@ -632,7 +663,7 @@ def fig_received_vs_finished(projects, period_months, period_start, truncate_at)
         )
         workload.append(open_mask.sum())
         received_hover.append(_project_bullets(projects, received_mask, "No projects received"))
-        finished_hover.append(_project_bullets(projects, finished_mask, "No projects finished"))
+        finished_hover.append(_finished_bullets(projects, finished_mask, "No projects finished"))
         workload_hover.append(_project_bullets(projects, open_mask, "Nothing open"))
     workload = pd.Series(workload, index=period_months, dtype=float)
     if truncate_at is not None:

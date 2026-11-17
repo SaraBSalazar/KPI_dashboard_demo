@@ -477,6 +477,15 @@ def period_panels(pkey, period, df, raw_df, category_order, cat_colors, task_cat
     year_body = [f'<h2>Year — {esc(period["label"])}</h2>',
                  fig(lambda d: kc.fig_received_vs_finished(
                      projects, period_months, period["start"], truncate_at))]
+    gap_stats = kd.closing_gap_summary(projects)
+    if gap_stats["n_finished"]:
+        bits = [f"<b>{gap_stats['n_finished']}</b> closed this period"]
+        if gap_stats["n_same_day"]:
+            bits.append(f"{gap_stats['n_same_day']} the same day the final report went out")
+        if gap_stats["n_delayed"]:
+            bits.append(f"{gap_stats['n_delayed']} took a median {esc(kd.format_days(gap_stats['median_gap_days']))} "
+                         "longer to formally close after the report was delivered")
+        year_body.append(note(" &middot; ".join(bits) + " &mdash; hover a bar above for which."))
     if len(df_period):
         year_body.append(fig(lambda d: kc.fig_category_share_stacked(
             df_period, f"Category share of total hours — {period['label']}",

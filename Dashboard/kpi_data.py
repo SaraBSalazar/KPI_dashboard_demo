@@ -62,6 +62,30 @@ RAW_COLUMNS = [
 # Historical major-task values renamed on load; saving a row afterwards migrates the file.
 MAJOR_TASK_RENAMES = {"AI Agent": "AI Skills", "Study": "Plan/Study"}
 
+# Shared with both KPI_Report.py's sidebar and the Add Data page -- picking a category or
+# major task for a new row is exactly where this reference is most useful.
+GLOSSARY_MD = """
+**Categories**
+- **Projects** — hands-on work tied to a specific tracked project: coding, project-specific
+  meetings/comms, project organization, and project-related study or tooling.
+- **Projects-Development** — projects centered on building tools or **AI Skills** (e.g. Claude
+  Code skills/agents), rather than a specific data/analysis deliverable.
+- **Meetings (non-project)** — meetings not tied to a specific tracked project: internal group
+  meetings, external meetings whether or not correlated with an active project, or strategic
+  meetings (e.g. a cross-team or facility meeting).
+- **Org & Admin** — organizational and administrative matters: seminars, bureaucracy, and
+  group or personal organization tasks.
+- **Trainning** — training attended or given.
+
+**Notable major tasks**
+- **Internal org** — communications, emails, personal organization, and group organization
+  requirements (including time-tracking upkeep).
+- **AI Skills** (formerly logged as "AI Agent") — development of AI-based tools/skills as part
+  of a Projects-Development initiative.
+- **Plan/Study** (formerly logged as "Study") — planning work and studying documentation,
+  methods, or background material.
+"""
+
 
 def format_hm(hours, signed=False):
     """3.9166 -> '3h55min'; 4.0 -> '4h'; -1.1 -> '-1h06min'; signed=True adds a '+' for > 0."""
@@ -1234,8 +1258,8 @@ def lead_time_table(projects, df_period=None, period_end=None):
                     so it has no turnaround to measure. (The workload line in kpi_charts
                     leaves Consulting out for the same reason.)
       Internal   -- kept, and marked `internal` so the chart can draw it muted, but left
-                    out of every median by lead_time_summary: ADA's own internal work has
-                    no external user waiting on it, so its days aren't service turnaround.
+                    out of every median by lead_time_summary: internal work has no external
+                    user waiting on it, so its days aren't service turnaround.
                     There is also nobody to send a report to, so 'Final Report Sent' stays
                     blank by nature -- its Closing Day ends the working stage instead, and
                     lands in `report`. Without that it would read as still running today,
@@ -1509,6 +1533,34 @@ def format_days(days):
         return "—"
     d = int(round(days))
     return f"{d} day" + ("" if d == 1 else "s")
+
+
+def closing_gap_summary(projects):
+    """How much bureaucratic closing (Closing Day) lags behind the actual final deliverable
+    (Final Report Sent), for the "Projects received vs finished" chart -- "finished" there
+    is Closing Day alone, which can make a project look freshly wrapped up on a month it
+    was really just paperwork catching up to work delivered earlier (or, for an Internal
+    project with no report to send at all, Closing Day IS the delivery).
+    n_finished: everything with a Closing Day this data covers.
+    n_same_day / n_delayed: of those that also have a Final Report Sent, how many closed
+    the same day (or before) vs strictly later.
+    median_gap_days: median lag, in days, across the delayed ones only (None if none)."""
+    if "Closing Day" not in projects.columns:
+        return {"n_finished": 0, "n_same_day": 0, "n_delayed": 0, "median_gap_days": None}
+    n_finished = int(projects["Closing Day"].notna().sum())
+    if "Final Report Sent" not in projects.columns:
+        return {"n_finished": n_finished, "n_same_day": 0, "n_delayed": 0, "median_gap_days": None}
+    both = projects[projects["Closing Day"].notna() & projects["Final Report Sent"].notna()]
+    if not len(both):
+        return {"n_finished": n_finished, "n_same_day": 0, "n_delayed": 0, "median_gap_days": None}
+    gap = (both["Closing Day"] - both["Final Report Sent"]).dt.days
+    delayed = gap[gap > 0]
+    return {
+        "n_finished": n_finished,
+        "n_same_day": int((gap <= 0).sum()),
+        "n_delayed": int(len(delayed)),
+        "median_gap_days": float(delayed.median()) if len(delayed) else None,
+    }
 
 
 def year_at_a_glance(projects, meetings, df_period=None):

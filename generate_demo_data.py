@@ -35,11 +35,7 @@ MONTHS = ["January", "February", "March", "April", "May", "June",
 
 # --- Vocabulary: same categories/major tasks as the real tracker, so the charts and the
 # glossary stay meaningful; project tags, groups and people are all invented. -------------
-CATEGORIES = ["Projects", "Projects-Development", "Meetings (non-project)", "ADAorg", "Trainning"]
-MAJOR_TASKS = ["code", "Tools", "AI Skills", "Internal org", "Internal Meeting", "External Meeting",
-               "Meetings/Comms", "ProjectOrg", "Plan/Study", "Burocracy", "Seminar", "Report",
-               "Review", "Article Revision", "Trainning"]
-USER_TYPES = ["Internal-ADA", "External Research Group", "Facility", "Internal Research Group"]
+USER_TYPES = ["Internal Team", "External Research Group", "Facility", "Internal Research Group"]
 USER_LOCATIONS = ["Oeiras", "Lisbon", "Coimbra", "Porto"]
 PROJECT_TRIGGERS = ["Internal", "Follow-up", "User-Requested", "Proactive Proposal",
                     "Inherited Project", "Outreach-Driven", "Consulting"]
@@ -174,10 +170,12 @@ def build_project_tracker():
 # --- 2) Personal time log: Data/track_time.csv -------------------------------------------
 NON_PROJECT_MAJOR_TASKS = {
     "Meetings (non-project)": ["Internal Meeting", "External Meeting"],
-    "ADAorg": ["Internal org", "Burocracy", "Seminar"],
+    "Org & Admin": ["Internal org", "Burocracy", "Seminar"],
     "Trainning": ["Trainning"],
 }
 PROJECT_MAJOR_TASKS = ["code", "Meetings/Comms", "ProjectOrg", "Report", "Review", "Plan/Study"]
+WEEKLY_HOURS_TARGET = (27, 34)  # a full working week, roughly -- also what keeps every
+                                 # month comfortably over 40h and the year averaging ~30-35h/week
 
 
 def _week_label(d):
@@ -196,15 +194,22 @@ def _week_label(d):
 def build_time_log(projects):
     """Mostly-continuous weekly logging per project across its own Begining -> report/
     today window (an occasional genuine pause, not one scattered into almost every week),
-    plus non-project categories spread evenly across the year. Generating hours
-    independently-per-week regardless of each project's own active window -- the first
-    version of this script did that -- produces a "paused" gap nearly everywhere once fed
-    through kpi_data.lead_time_table's gap detector, which doesn't resemble a real time
-    log at all."""
+    topped up with non-project hours so every week lands around a full working week
+    (WEEKLY_HOURS_TARGET) regardless of how many projects happen to be active that week.
+    Generating hours independently-per-week regardless of each project's own active
+    window -- the first version of this script did that -- produces a "paused" gap nearly
+    everywhere once fed through kpi_data.lead_time_table's gap detector, which doesn't
+    resemble a real time log at all. And a flat few non-project hours per week (the second
+    version) left early months -- before most projects have even started -- reading as
+    almost no work at all; topping up to a target each week is what keeps every month's
+    total healthy and gives non-project categories a real, visible share instead of a
+    token one."""
     year_start, year_end = date(YEAR, 1, 1), date(YEAR, 12, 31)
     today = date.today()
     rows = []
     entry_id = 1
+    week_hours = {}  # monday -> running total, across every category, so the top-up below
+                      # knows how much more a week actually needs
 
     def add_entry(monday, category, major_task, tag, hrs, mins):
         nonlocal entry_id
@@ -217,6 +222,7 @@ def build_time_log(projects):
             "Unnamed: 13": "",
         })
         entry_id += 1
+        week_hours[monday] = week_hours.get(monday, 0.0) + hrs + mins / 60
 
     project_windows = {}  # tag -> (begin_d, end_d), reused below to keep dev-side entries
                            # from landing on a project before it's even begun
@@ -254,9 +260,15 @@ def build_time_log(projects):
             if random.random() < 0.05:  # a rare single skipped week -- low enough that two in a
                                          # row (which would itself read as a second "pause") stays rare
                 continue
-            for _ in range(random.randint(1, 2)):
-                hrs, mins = random.choice([1, 2, 2, 3, 4]), random.choice([0, 0, 15, 30])
+            # a bit more per sitting when fewer projects are sharing the week (see the
+            # per-week cap below) keeps a single active project from reading as part-time
+            if week_hours.get(wk, 0) >= 20:  # already a full day's worth from other active
+                continue                      # projects this week -- one person, one week
+            for _ in range(random.randint(1, 3)):
+                hrs, mins = random.choice([1, 2, 2, 3, 4, 4]), random.choice([0, 0, 15, 30])
                 add_entry(wk, "Projects", random.choice(PROJECT_MAJOR_TASKS), p["Project tag"], hrs, mins)
+                if week_hours.get(wk, 0) >= 20:  # leave room for other active projects and
+                    break                        # non-project hours -- one person, one week
 
     # A handful of Projects-Development entries (tool-building side work). Still tagged to
     # a project tag (so it counts as that project's hours), but only to one already in its
@@ -271,21 +283,34 @@ def build_time_log(projects):
             add_entry(monday, "Projects-Development", random.choice(["Tools", "AI Skills"]), tag, hrs, mins)
         monday += timedelta(days=7)
 
-    # Non-project categories: internal org, non-project meetings, training -- spread
-    # fairly evenly across the whole year, independent of any project's lifecycle.
+    # Non-project categories: org/admin, non-project meetings, training. A light baseline
+    # every week regardless (people have *some* meetings and admin even in a heavy project
+    # week), then topped up until the week reaches WEEKLY_HOURS_TARGET -- which is what
+    # carries the early months (before most projects have started) up to a real week's
+    # worth of hours, mostly as org/admin and meetings rather than invented project work.
     monday = year_start - timedelta(days=year_start.weekday())
     while monday <= year_end:
-        for _ in range(random.randint(1, 3)):
-            category = random.choices(list(NON_PROJECT_MAJOR_TASKS), weights=[50, 35, 15])[0]
+        target = random.uniform(*WEEKLY_HOURS_TARGET)
+
+        def add_non_project():
+            category = random.choices(list(NON_PROJECT_MAJOR_TASKS), weights=[40, 45, 15])[0]
             major_task = random.choice(NON_PROJECT_MAJOR_TASKS[category])
-            hrs, mins = random.choice([0, 1, 1, 2]), random.choice([0, 0, 30])
+            hrs, mins = random.choice([1, 1, 2, 2, 3]), random.choice([0, 0, 30])
             add_entry(monday, category, major_task, category, hrs, mins)
+
+        for _ in range(random.randint(2, 4)):
+            add_non_project()
+        guard = 0  # belt-and-braces: WEEKLY_HOURS_TARGET is well above what a handful of
+        while week_hours.get(monday, 0) < target and guard < 25:  # 1-3h entries could ever
+            add_non_project()                                      # fail to reach, but never loop forever
+            guard += 1
         monday += timedelta(days=7)
 
     df = pd.DataFrame(rows)
     path = DATA_DIR / "track_time.csv"
     df.to_csv(path, sep=";", index=False, encoding="utf-8-sig")
-    print(f"wrote {path} ({len(df)} rows across {YEAR})")
+    print(f"wrote {path} ({len(df)} rows across {YEAR}, "
+          f"{df['Hours (exact)'].sum():.0f}h total, {df['Hours (exact)'].sum()/52:.1f}h/week avg)")
 
 
 # --- 3) Special projects: ratings + task checklists ---------------------------------------
@@ -318,19 +343,33 @@ def build_special_projects():
     df.to_excel(path, sheet_name="Special Projects Ratings", index=False)
     print(f"wrote {path} ({len(df)} goal/project rows)")
 
+    # Anchored on the REAL current date, not the fake year above -- kpi_data.task_schedule
+    # splits tasks into "coming up" / "behind" against whatever day the dashboard is
+    # actually opened on. Dates fixed to the 2025 demo year would all read as overdue no
+    # matter when someone runs this, which is exactly backwards from a healthy task list.
+    today = date.today()
     tasks = {}
     for _, project, *_ in SPECIAL_PROJECTS:
-        n_tasks = random.randint(2, 4)
-        cursor = date(YEAR, random.randint(1, 6), 1)
+        n_tasks = random.randint(3, 5)
+        # start a little in the past, so the first milestone or two are already behind us,
+        # then run on well past today -- most of what's left open should be upcoming, not
+        # overdue.
+        cursor = today - timedelta(days=random.randint(20, 60))
         task_list = []
         for i in range(n_tasks):
             start = cursor
             due = start + timedelta(days=random.randint(20, 45))
+            if due < today - timedelta(days=7):
+                done = random.random() < 0.9   # safely in the past -> almost certainly done
+            elif due < today:
+                done = random.random() < 0.3   # just past -> a few genuinely overdue ones
+            else:
+                done = False                     # in the future -> can't be done yet
             task_list.append({
                 "id": f"{random.getrandbits(32):08x}",
                 "text": f"{project}: milestone {i + 1}",
                 "level": 0,
-                "done": i == 0,  # first milestone already done, the rest pending
+                "done": done,
                 "start": start.isoformat(),
                 "due": due.isoformat(),
             })
@@ -376,10 +415,10 @@ TOOLS = [
      "AI Skill", f"{YEAR}", "User", "User Project", "Limited sandbox network access.",
      "Faster deployment across more genome builds."),
     ("metadata-normalizer-agent", "Turns user-submitted sample sheets into pipeline-ready standardized tables.",
-     "AI Skill", f"{YEAR}", "ADA", "Internal pipeline tool", "Needs tighter dashboard integration.",
+     "AI Skill", f"{YEAR}", "Internal Team", "Internal pipeline tool", "Needs tighter dashboard integration.",
      "Cuts manual cleanup on recurring requests."),
     ("Report Builder", "Generates the standard PDF report from a project's tracked outputs.",
-     "Internal Tool", f"{YEAR}", "ADA", "Internal pipeline tool", "", "Could template more report types."),
+     "Internal Tool", f"{YEAR}", "Internal Team", "Internal pipeline tool", "", "Could template more report types."),
 ]
 
 

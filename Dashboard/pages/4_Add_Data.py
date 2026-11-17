@@ -87,6 +87,8 @@ st.caption(
     "Every save here touches only the one row being added or edited, via openpyxl -- nothing "
     "else on the sheet (including formulas) is rewritten. For anything beyond that, use Excel directly."
 )
+with st.expander("📖 Category & task glossary"):
+    st.markdown(kd.GLOSSARY_MD)
 
 periods = kcache.discover_periods()
 if not periods:

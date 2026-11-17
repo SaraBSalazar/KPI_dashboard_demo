@@ -26,32 +26,10 @@ READONLY = st.session_state.get("readonly", False)
 if READONLY:
     st.info("📖 Read-only view — editing controls are hidden.", icon="📖")
 
-GLOSSARY_MD = """
-**Categories**
-- **Projects** — hands-on work tied to a specific tracked project: coding, project-specific
-  meetings/comms, project organization, and project-related study or tooling.
-- **Projects-Development** — projects centered on building tools or **AI Skills** (e.g. Claude
-  Code skills/agents), rather than a specific data/analysis deliverable.
-- **Meetings (non-project)** — meetings not tied to a specific tracked project: internal group
-  meetings, external meetings whether or not correlated with an active project, or strategic
-  meetings (e.g. the Multiomics meeting with the OMICs facility).
-- **ADAorg** — work within ADA or other institutional matters: seminars, bureaucracy, and
-  internal-org tasks.
-- **Trainning** — training attended or given.
-
-**Notable major tasks**
-- **Internal org** — communications, emails, personal organization, and group organization
-  requirements (including Agendo and other time-tracking upkeep).
-- **AI Skills** (formerly logged as "AI Agent") — development of AI-based tools/skills as part
-  of a Projects-Development initiative.
-- **Plan/Study** (formerly logged as "Study") — planning work and studying documentation,
-  methods, or background material.
-"""
-
-NON_PROJECT_ROWS = ["ADAorg", "Trainning", "Seminário"]
+NON_PROJECT_ROWS = ["Org & Admin", "Trainning", "Seminário"]
 
 # Project work at the CATEGORY level: both project categories together, as opposed to
-# institutional (ADAorg), training, or non-project meeting time.
+# org/admin, training, or non-project meeting time.
 PROJECT_CATEGORIES = ["Projects", "Projects-Development"]
 # "Development" = time spent building things -- tools and AI Skills -- wherever it was
 # logged, so it is keyed on the major task rather than the category: a tool built for a
@@ -91,7 +69,7 @@ with st.sidebar:
         "Edit a file and rerun (or just interact with any control) to see the update."
     )
     with st.expander("📖 Category & task glossary"):
-        st.markdown(GLOSSARY_MD)
+        st.markdown(kd.GLOSSARY_MD)
 
 df_period = kd.filter_to_period(df, period)
 projects = kcache.load_projects(period["file"], period["sheet"])
@@ -495,6 +473,15 @@ with tab_year:
         kc.fig_received_vs_finished(projects, period_months, period["start"], truncate_at),
         width="stretch",
     )
+    gap_stats = kd.closing_gap_summary(projects)
+    if gap_stats["n_finished"]:
+        bits = [f"**{gap_stats['n_finished']}** closed this period"]
+        if gap_stats["n_same_day"]:
+            bits.append(f"{gap_stats['n_same_day']} the same day the final report went out")
+        if gap_stats["n_delayed"]:
+            bits.append(f"{gap_stats['n_delayed']} took a median {kd.format_days(gap_stats['median_gap_days'])} "
+                         "longer to formally close after the report was delivered")
+        st.caption(" · ".join(bits) + " — hover a bar above for which.")
 
     st.divider()
     st.subheader(f"Time logged — {period_label}", anchor="year-timelog")
