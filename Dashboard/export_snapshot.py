@@ -210,7 +210,15 @@ RUNTIME_JS = """
   }
 
   var periodSelect = document.getElementById("period-select");
-  var state = { tab: "overview", period: periodSelect ? periodSelect.value : "" };
+  // With only one reporting period there is no picker to read a value from, but the
+  // period-scoped panels still carry their data-period -- default to that one instead of
+  // "", or nothing with a data-period would ever match and every such panel would stay
+  // hidden despite being fully built into the page.
+  var firstPeriodEl = document.querySelector("[data-period]");
+  var state = {
+    tab: "overview",
+    period: periodSelect ? periodSelect.value : (firstPeriodEl ? firstPeriodEl.dataset.period : ""),
+  };
 
   function apply() {
     document.querySelectorAll(".tab").forEach(function (b) {
