@@ -25,7 +25,26 @@ streamlit run KPI_Report.py
 ```
 
 It should open straight into a full fake year of data — no setup step, no missing-file
-errors. What to actually check on each page:
+errors.
+
+**A clone is a one-time snapshot, not a live link** — it won't pick up later pushes on
+its own. If you already cloned it before and want the latest, either pull into that same
+folder:
+
+```powershell
+cd <path to your clone>\KPI_dashboard_demo
+git pull
+```
+
+or delete it and clone again (simplest for a disposable test copy):
+
+```powershell
+cd $env:TEMP
+Remove-Item -Recurse -Force KPI_dashboard_demo
+git clone https://github.com/SaraBSalazar/KPI_dashboard_demo.git
+```
+
+What to actually check on each page:
 
 - **Week / Month / Year** (main page): switch tabs, pick a different week from the
   dropdown, confirm charts render and numbers look sane.
