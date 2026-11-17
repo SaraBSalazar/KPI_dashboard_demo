@@ -1266,7 +1266,7 @@ def project_activity(df_period):
     return activity
 
 
-def lead_time_table(projects, df_period=None, period_end=None, exclusions=None):
+def lead_time_table(projects, df_period=None, period_end=None, pause_notes=None):
     """Per-project turnaround, computed from the tracker's own date columns rather than its
     'Lead Time: Request to Project Start' column (which is a Notion text field, usually
     blank, and holds a date rather than a duration).
@@ -1295,13 +1295,6 @@ def lead_time_table(projects, df_period=None, period_end=None, exclusions=None):
                     lands in `report`. Without that it would read as still running today,
                     months after it actually wrapped up.
 
-    `exclusions` (a collection of project tags, from load_exclusions) layers a manual,
-    per-project override of that same "out of the medians" treatment on top of the
-    automatic Internal one -- for anything Internal doesn't already catch but shouldn't
-    count either (an open-ended wait, a project effectively on hold). Each row's
-    `discounted` is `internal OR in exclusions`; `internal` itself is kept separate so the
-    chart can still say *why* ("Internal project" vs "excluded by hand").
-
     When `df_period` is given, each row also carries what the personal time log says —
     not replacing the tracker's dates, but annotating them:
       real_start   = start of the first week with logged hours: when work *really* began,
@@ -1317,12 +1310,19 @@ def lead_time_table(projects, df_period=None, period_end=None, exclusions=None):
                      stop-and-RESTART; a project touched once and never again needs this to
                      show up as paused at all.
 
+    `pause_notes` (from load_pause_notes: {project: {gap-key: {"note", "forgive"}}}) lets
+    any individual pause be excused from the medians without excusing the whole project --
+    a pause ticked "forgive" has its days subtracted from `working_days_counted` /
+    `total_days_counted`, which lead_time_summary and turnaround_by_size use instead of
+    the raw `working_days` / `total_days` (kept as-is for the chart and the per-project
+    table, since the time off still really happened).
+
     Rows whose dates are impossible (out of order, or a stage longer than
     LEAD_TIME_MAX_DAYS -- almost always a mistyped year) are kept but marked in `flag`, so
     callers can report them to the user instead of letting them poison the medians."""
     today = pd.Timestamp.now().normalize()
     activity = project_activity(df_period)
-    exclusions = set(exclusions or ())
+    pause_notes = pause_notes or {}
     has_desc = "Short Description" in projects.columns
     hours_by_tag, _hours_source = project_hours_with_source(projects, df_period)
     # The log's very first week ever: a project already active then may well have started
@@ -1374,18 +1374,26 @@ def lead_time_table(projects, df_period=None, period_end=None, exclusions=None):
         # long it's been quiet. This trailing gap covers exactly that: silence from the
         # last logged week up to work_end (today/period end if still running, the report
         # date if delivered), the same way a mid-project hole would.
-        gaps = list(act["gaps"]) if act else []
+        gaps = [dict(g) for g in act["gaps"]] if act else []
         if act:
             trailing_weeks = int((work_end - act["last_end"]).days // 7)
             if trailing_weeks >= PAUSE_MIN_WEEKS:
                 gaps.append({"start": act["last_end"] + pd.Timedelta(days=1),
                              "end": work_end, "weeks": trailing_weeks})
-        is_internal = trigger == "Internal"
+
+        tag_notes = pause_notes.get(tag, {})
+        for g in gaps:
+            g["forgiven"] = bool(tag_notes.get(pause_key(g), {}).get("forgive"))
+        forgiven_days = sum(g["weeks"] * 7 for g in gaps if g["forgiven"])
+        working_counted = max(0, working - forgiven_days)
+
         rows.append({
             "Project tag": tag, "first_contact": first, "start": start,
             "work_end": work_end, "report": report if done else pd.NaT,
             "waiting_days": waiting, "working_days": working,
             "total_days": waiting + working, "done": done, "flag": flag,
+            "working_days_counted": working_counted,
+            "total_days_counted": waiting + working_counted,
             "real_start": real_start, "pre_log": pre_log,
             # Register -> Closing Day is the span Agendo tracks, which is neither of the two
             # stages above: it starts at registration (after first contact) and runs past the
@@ -1394,16 +1402,17 @@ def lead_time_table(projects, df_period=None, period_end=None, exclusions=None):
             "hours": float(hours_by_tag.get(tag, 0.0)),
             "description": (p.get("Short Description") if has_desc else None),
             "inherited": trigger == "Inherited Project",
-            "internal": is_internal,
-            "excluded_manually": (not is_internal) and tag in exclusions,
-            "discounted": is_internal or tag in exclusions,
+            "internal": trigger == "Internal",
             "weeks_active": act["n_active"] if act else None,
-            "weeks_paused": sum(g["weeks"] for g in gaps), "gaps": gaps,
+            "weeks_paused": sum(g["weeks"] for g in gaps if not g["forgiven"]), "gaps": gaps,
         })
     return pd.DataFrame(rows)
 
 
-# --- Pause notes: why a project stopped ("waiting for user", ...) ---------------------------
+# --- Pause notes: why a project stopped ("waiting for user", ...), and whether to forgive
+# that pause -- excuse its days from the turnaround medians without excusing the rest of
+# the project. One pause can be explained without being forgiven (a note for context, but
+# the time still counts) or forgiven without a note (just the checkbox) -- either is valid.
 PAUSE_NOTES_PATH = DATA_DIR / "project_pause_notes.json"
 
 
@@ -1414,61 +1423,53 @@ def pause_key(gap):
 
 
 def load_pause_notes():
-    """{project: {gap-start ISO date: note}} — the user's explanations for detected pauses."""
+    """{project: {gap-start ISO date: {"note": str, "forgive": bool}}}. Also reads the
+    older plain-string format (note only, never forgiven) from before "forgive" existed,
+    so nothing written under that version is lost."""
     if not PAUSE_NOTES_PATH.exists():
         return {}
     try:
         data = json.loads(PAUSE_NOTES_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
-    return {str(proj): {str(k): str(v) for k, v in (notes or {}).items()}
+
+    def normalize(entry):
+        if isinstance(entry, str):
+            return {"note": entry, "forgive": False}
+        return {"note": str(entry.get("note", "")), "forgive": bool(entry.get("forgive"))}
+
+    return {str(proj): {str(k): normalize(v) for k, v in (notes or {}).items()}
             for proj, notes in data.items()}
 
 
 def save_pause_notes(notes):
-    """Persist pause notes, dropping empty strings (deleting a note's text removes it).
-    Callers should guard with PermissionError like every other save."""
-    cleaned = {proj: {k: v.strip() for k, v in n.items() if v and v.strip()}
-               for proj, n in notes.items()}
-    cleaned = {proj: n for proj, n in cleaned.items() if n}
+    """Persist pause notes, dropping an entry once it has neither a note nor "forgive"
+    ticked (nothing left to keep). Callers should guard with PermissionError like every
+    other save."""
+    cleaned = {}
+    for proj, gap_notes in notes.items():
+        kept = {}
+        for key, entry in gap_notes.items():
+            note = (entry.get("note") or "").strip()
+            forgive = bool(entry.get("forgive"))
+            if note or forgive:
+                kept[key] = {"note": note, "forgive": forgive}
+        if kept:
+            cleaned[proj] = kept
     PAUSE_NOTES_PATH.write_text(json.dumps(cleaned, indent=2, ensure_ascii=False),
-                                encoding="utf-8")
-
-
-# --- Manual turnaround exclusions: "don't count this project's time either" ----------------
-# A per-project override layered on top of the automatic Internal-trigger exclusion, for
-# anything that isn't Internal but still shouldn't count toward the turnaround medians --
-# a project effectively on hold, an open-ended wait on something outside the project
-# itself. lead_time_table folds this into `discounted` alongside `internal`.
-EXCLUSIONS_PATH = DATA_DIR / "project_turnaround_exclusions.json"
-
-
-def load_exclusions():
-    """{project tag} -- set of projects manually excluded from the turnaround medians."""
-    if not EXCLUSIONS_PATH.exists():
-        return set()
-    try:
-        data = json.loads(EXCLUSIONS_PATH.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return set()
-    return {str(tag) for tag in (data or [])}
-
-
-def save_exclusions(tags):
-    """Persist the manual-exclusion set. Callers should guard with PermissionError like
-    every other save."""
-    EXCLUSIONS_PATH.write_text(json.dumps(sorted(set(tags)), indent=2, ensure_ascii=False),
                                 encoding="utf-8")
 
 
 def lead_time_summary(lead_df):
     """Median turnaround figures from `lead_time_table`, ignoring flagged (bad-date) rows
-    and anything `discounted` -- internal projects (no external user waits on those, so
-    they aren't turnaround) or manually excluded ones. The chart still draws them, muted.
-    Each value is None when nothing qualifies, so callers can show an em dash."""
+    and internal projects (no external user waits on those, so they aren't turnaround --
+    the chart still draws them, muted). The working/total medians use
+    `working_days_counted` / `total_days_counted`, not the raw day counts, so a pause
+    ticked "forgive" (see load_pause_notes) doesn't inflate them. Each value is None when
+    nothing qualifies, so callers can show an em dash."""
     clean = lead_df[lead_df["flag"] == ""] if len(lead_df) else lead_df
-    if len(clean) and "discounted" in clean.columns:
-        clean = clean[~clean["discounted"].fillna(False).astype(bool)]
+    if len(clean) and "internal" in clean.columns:
+        clean = clean[~clean["internal"].fillna(False).astype(bool)]
 
     def med(series):
         return None if not len(series) else float(series.median())
@@ -1480,16 +1481,17 @@ def lead_time_summary(lead_df):
     # on the chart, `n_clean` only the ones the medians are computed from.
     shown = lead_df[lead_df["flag"] == ""] if len(lead_df) else lead_df
     shown_delivered = shown[shown["done"]] if len(shown) else shown
+    forgiven_days = (int(sum(g["weeks"] * 7 for gaps in lead_df["gaps"] for g in (gaps or []) if g.get("forgiven")))
+                      if len(lead_df) and "gaps" in lead_df.columns else 0)
     return {
         "median_waiting": med(clean["waiting_days"]) if len(clean) else None,
-        "median_working": med(delivered["working_days"]) if len(delivered) else None,
-        "median_total": med(delivered["total_days"]) if len(delivered) else None,
+        "median_working": med(delivered["working_days_counted"]) if len(delivered) else None,
+        "median_total": med(delivered["total_days_counted"]) if len(delivered) else None,
         "n_clean": int(len(clean)), "n_delivered": int(len(delivered)),
         "n_flagged": int((lead_df["flag"] != "").sum()) if len(lead_df) else 0,
         "n_internal": (int(lead_df["internal"].fillna(False).astype(bool).sum())
                        if len(lead_df) and "internal" in lead_df.columns else 0),
-        "n_excluded_manually": (int(lead_df["excluded_manually"].fillna(False).astype(bool).sum())
-                                 if len(lead_df) and "excluded_manually" in lead_df.columns else 0),
+        "forgiven_days": forgiven_days,
         "n_shown": int(len(shown)), "n_shown_delivered": int(len(shown_delivered)),
     }
 
@@ -1515,7 +1517,7 @@ def lead_time_coverage(projects, lead_df, stats):
         "consulting": consulting,
         "undated": max(0, total - charted - consulting),
         "internal": stats["n_internal"],
-        "excluded_manually": stats["n_excluded_manually"],
+        "forgiven_days": stats["forgiven_days"],
         "flagged": stats["n_flagged"],
         "measured": stats["n_shown"],
     }
@@ -1532,18 +1534,16 @@ def lead_time_coverage_note(cov):
     tail = (" · ".join(listed) + "." if listed else "all of them.")
     note = (f"**{cov['total']}** projects this period — **{cov['measured']}** on the chart, "
             + tail)
-    discounted_bits = []
     if cov["internal"]:
-        discounted_bits.append(f"**{cov['internal']}** internal")
-    if cov["excluded_manually"]:
-        discounted_bits.append(f"**{cov['excluded_manually']}** excluded by hand")
-    if discounted_bits:
-        is_plural = (cov["internal"] + cov["excluded_manually"]) != 1
+        is_plural = cov["internal"] != 1
         noun = "projects" if is_plural else "project"
         verb = "are" if is_plural else "is"
         stay = "stay" if is_plural else "stays"
-        note += (f" The {' and '.join(discounted_bits)} {noun} {verb} counted above and "
+        note += (f" The **{cov['internal']}** internal {noun} {verb} counted above and "
                  f"drawn, but {stay} out of the three medians.")
+    if cov["forgiven_days"]:
+        note += (f" **{format_days(cov['forgiven_days'])}** of paused time, forgiven by "
+                 "hand, is also left out.")
     return note
 
 
@@ -1558,8 +1558,8 @@ def lead_time_effort(lead_df):
 
     Values are None when nothing qualifies, so callers can show an em dash."""
     clean = lead_df[lead_df["flag"] == ""] if len(lead_df) else lead_df
-    if len(clean) and "discounted" in clean.columns:
-        clean = clean[~clean["discounted"].fillna(False).astype(bool)]
+    if len(clean) and "internal" in clean.columns:
+        clean = clean[~clean["internal"].fillna(False).astype(bool)]
     if not len(clean):
         return {"median_agendo": None, "n_agendo": 0}
 
@@ -1590,8 +1590,8 @@ def turnaround_by_size(lead_df):
 
     Returns one dict per band: label, range_label, median_days (None when empty), n."""
     clean = lead_df[lead_df["flag"] == ""] if len(lead_df) else lead_df
-    if len(clean) and "discounted" in clean.columns:
-        clean = clean[~clean["discounted"].fillna(False).astype(bool)]
+    if len(clean) and "internal" in clean.columns:
+        clean = clean[~clean["internal"].fillna(False).astype(bool)]
     if len(clean):
         clean = clean[clean["done"] & (clean["hours"].fillna(0) > 0)]
 
@@ -1614,7 +1614,7 @@ def turnaround_by_size(lead_df):
             range_label = f"{low}\u2013{high} h"
         bands.append({
             "label": label, "range_label": range_label, "n": int(len(sub)),
-            "median_days": float(sub["total_days"].median()) if len(sub) else None,
+            "median_days": float(sub["total_days_counted"].median()) if len(sub) else None,
         })
     return bands
 

@@ -132,6 +132,7 @@ tied to its own institution's fiscal calendar — see the note below.)
 | `Data/beyond_projects.json` | "Beyond projects" cards (source of truth), mirrored to `Beyond_Projects.xlsx` on every save. |
 | `Data/custom_tags.json` | Remembers new dropdown options until they're used in a saved row. |
 | `Data/tools.xlsx` | Tools/automations inventory. |
+| `Data/project_pause_notes.json` | Per-pause notes and "forgive" flags on the turnaround chart (Projects Review) — a forgiven pause's days are excluded from that project's turnaround medians. |
 
 The two JSON files are the dashboard's working copies because they hold shapes (a nested
 to-do list, free-text cards) that don't map onto any existing spreadsheet column; the
