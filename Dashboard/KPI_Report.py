@@ -221,10 +221,15 @@ with tab_week:
                        "pick an existing tag **or type a brand-new one**, and it's kept when you save.")
 
             custom_tags = kd.load_custom_tags()
-            project_options = sorted(set(df["Project"].unique()) | set(custom_tags["projects"]))
-            category_options = [c for c in CATEGORY_ORDER if c in set(df["Category"].unique())]
+            # str-filtered: a row saved with that cell left blank round-trips through the
+            # CSV as NaN (a float), and sorted() can't compare a float against the other
+            # tags' strings -- drop it rather than let the whole tab crash on reload.
+            def _tag_values(series):
+                return {v for v in series.unique() if isinstance(v, str) and v.strip()}
+            project_options = sorted(_tag_values(df["Project"]) | set(custom_tags["projects"]))
+            category_options = [c for c in CATEGORY_ORDER if c in _tag_values(df["Category"])]
             category_options += sorted(set(custom_tags["categories"]) - set(category_options))
-            task_options = sorted(set(df["Major task name (chart)"].unique()) | set(custom_tags["major_tasks"]))
+            task_options = sorted(_tag_values(df["Major task name (chart)"]) | set(custom_tags["major_tasks"]))
 
             # Rendered as MultiselectColumn rather than SelectboxColumn so new tags can be
             # typed straight into a cell -- see kd.tag_to_cell / kd.tag_from_cell.
@@ -285,12 +290,20 @@ with tab_week:
                 # Built column by column with the frame's own dtypes: a plain DataFrame of
                 # blank rows would be all-NA in the numeric columns, which makes concat warn
                 # about (and one day change) the resulting dtypes.
+                # A numeric column (Hrs, Min) can be pure int64 if every row this week
+                # happens to have a value -- int64 can't hold a blank at all, so None there
+                # raises in pandas' own Series construction. NaN is the one blank value every
+                # dtype accepts, but it still needs a float dtype to carry it, hence the
+                # upcast below (harmless: NumberColumn renders a float the same as an int).
                 blank_idx = range(len(editor_df), len(editor_df) + n_blank)
                 editor_df = pd.concat([editor_df, pd.DataFrame({
                     col: pd.Series(
                         [[] for _ in range(n_blank)] if col in TAG_COLS
-                        else (["No"] * n_blank if col == "Timesheet updated" else [None] * n_blank),
-                        index=blank_idx, dtype=object if col in TAG_COLS else editor_df[col].dtype)
+                        else (["No"] * n_blank if col == "Timesheet updated" else [float("nan")] * n_blank),
+                        index=blank_idx,
+                        dtype=(object if col in TAG_COLS
+                               else "float64" if pd.api.types.is_integer_dtype(editor_df[col])
+                               else editor_df[col].dtype))
                     for col in editor_df.columns}, index=blank_idx)])
             editor_df.insert(0, "🗑", False)
 
