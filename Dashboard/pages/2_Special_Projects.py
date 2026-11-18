@@ -343,9 +343,41 @@ st.markdown(
 
 ks.header("Special Projects",
           "Goal ratings, per-project task checklists, and predicted timelines")
-page_nav([("Goals chart", "goals-chart"), ("What's next", "whats-next"),
+page_nav([("What's next", "whats-next"), ("Goals chart", "goals-chart"),
           ("Project card", "project-card"), ("Timeline", "timeline"),
           ("All projects", "timeline-all"), ("All ratings", "all-ratings")])
+
+# --- What's next / what's late, across every special project -------------------------------
+# Leads the page: this is the one actionable, time-sensitive panel here, so it comes before
+# the overview chart and project drill-down rather than being buried under them.
+anchor("whats-next")
+sched_tasks = kcache.load_project_tasks()
+upcoming, overdue = kd.task_schedule(sched_tasks, within_days=60)
+
+
+def render_schedule(entries, empty_text, late):
+    if not entries:
+        st.caption(empty_text)
+        return
+    for e in entries:
+        when = (f"{abs(e['days'])} day{'' if abs(e['days']) == 1 else 's'} late" if late
+                else "today" if e["days"] == 0
+                else f"in {e['days']} day{'' if e['days'] == 1 else 's'}")
+        colour = "red" if late else "blue"
+        st.markdown(
+            f"**{e['due'].strftime('%d %b %Y')}** · :{colour}[{when}]  \n"
+            f"{e['text']} — *{e['project']}*"
+        )
+
+
+n1, n2 = st.columns(2)
+with n1:
+    st.markdown(f"#### ⏭️ Coming up in 2 months ({len(upcoming)})")
+    render_schedule(upcoming, "No dated tasks in the next 2 months — add planned dates to a project's tasks.", late=False)
+with n2:
+    st.markdown(f"#### ⚠️ Behind ({len(overdue)})")
+    render_schedule(overdue, "Nothing overdue.", late=True)
+
 st.caption(
     "x = Development stars, y = Impact stars, bubble size = Visibility stars, colored by Goal. "
     "The four shaded quadrants read effort against impact (key below the chart). "
@@ -409,33 +441,6 @@ else:
         if clicked_clean in project_names and clicked_clean != last_synced:
             st.session_state["selected_project_name"] = clicked_clean
             st.session_state["_last_synced_click"] = clicked_clean
-
-    # --- What's next / what's late, across every special project ---------------------------
-    anchor("whats-next")
-    sched_tasks = kcache.load_project_tasks()
-    upcoming, overdue = kd.task_schedule(sched_tasks, limit=10)
-
-    def render_schedule(entries, empty_text, late):
-        if not entries:
-            st.caption(empty_text)
-            return
-        for e in entries:
-            when = (f"{abs(e['days'])} day{'' if abs(e['days']) == 1 else 's'} late" if late
-                    else "today" if e["days"] == 0
-                    else f"in {e['days']} day{'' if e['days'] == 1 else 's'}")
-            colour = "red" if late else "blue"
-            st.markdown(
-                f"**{e['due'].strftime('%d %b %Y')}** · :{colour}[{when}]  \n"
-                f"{e['text']} — *{e['project']}*"
-            )
-
-    n1, n2 = st.columns(2)
-    with n1:
-        st.markdown(f"#### ⏭️ Coming up ({len(upcoming)})")
-        render_schedule(upcoming, "No upcoming dated tasks — add planned dates to a project's tasks.", late=False)
-    with n2:
-        st.markdown(f"#### ⚠️ Behind ({len(overdue)})")
-        render_schedule(overdue, "Nothing overdue.", late=True)
 
     st.subheader("Project card", anchor="project-card")
     default_name = st.session_state.get("selected_project_name", project_names[0])

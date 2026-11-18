@@ -707,11 +707,12 @@ def project_start(tasks):
     return min(dates) if dates else None
 
 
-def task_schedule(all_tasks, today=None, limit=None):
+def task_schedule(all_tasks, today=None, within_days=None):
     """Split every dated, unfinished task across all special projects into (upcoming,
     overdue), each sorted by date -- soonest first for upcoming, most overdue first for
     behind. Entries carry project, text, due and days (days until / days late), so a
-    caller can render both lists without re-deriving anything. `limit` caps each list."""
+    caller can render both lists without re-deriving anything. `within_days` caps how far
+    ahead "upcoming" looks; overdue is always returned in full."""
     today = (today or pd.Timestamp.now().normalize()).date()
     upcoming, overdue = [], []
     for project, tasks in all_tasks.items():
@@ -724,9 +725,11 @@ def task_schedule(all_tasks, today=None, limit=None):
             entry = {"project": project, "text": (task.get("text") or "").strip() or "(untitled task)",
                      "due": due, "days": (due - today).days}
             (upcoming if due >= today else overdue).append(entry)
+    if within_days is not None:
+        upcoming = [e for e in upcoming if e["days"] <= within_days]
     upcoming.sort(key=lambda e: e["due"])
     overdue.sort(key=lambda e: e["due"])
-    return (upcoming[:limit] if limit else upcoming), (overdue[:limit] if limit else overdue)
+    return upcoming, overdue
 
 
 def predicted_end(tasks):
