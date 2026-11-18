@@ -27,10 +27,12 @@ below for exactly what changed going from one to the other.
 
 ### Video walkthrough
 
-[![Watch a ~90s walkthrough of the dashboard](media/dashboard_tour_thumb.png)](media/dashboard_tour.mp4)
+[![Watch a ~3min walkthrough of the dashboard](media/dashboard_tour_thumb.png)](media/dashboard_tour.mp4)
 
 A silent, captioned tour — Week/Month/Year, Needs attention, Turnaround, Special
 Projects, Tools, and Add Data. Click the image to play (GitHub's own video player).
+The file above is compressed to fit GitHub's inline-preview size limit; a
+[full-quality version](media/dashboard_tour_hd.mp4) is also in the repo.
 
 ---
 
