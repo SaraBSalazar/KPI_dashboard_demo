@@ -676,9 +676,12 @@ def main() -> None:
             # -ss before -i trims the cold-start preroll (see PREROLL_SECONDS) off the
             # front; run_tour() pads its own startup wait to the same length, so the
             # published video opens already on the Week tab, fully loaded.
+            # crf=30 (not a sharper-looking 20): GitHub only renders an inline preview
+            # up to ~10MB, and 20 pushed this past 22MB -- 30 lands around 6-7MB for
+            # this ~3min tour with no visible loss on static dashboard-UI content.
             ["ffmpeg", "-y", "-ss", str(PREROLL_SECONDS), "-i", str(webm_path),
              "-vf", f"fps={FPS},format=yuv420p",
-             "-c:v", "libx264", "-crf", "20", "-preset", "slow",
+             "-c:v", "libx264", "-crf", "30", "-preset", "slow",
              "-movflags", "+faststart", str(mp4_path)],
             check=True,
         )
