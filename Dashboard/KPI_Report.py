@@ -26,8 +26,6 @@ READONLY = st.session_state.get("readonly", False)
 if READONLY:
     st.info("📖 Read-only view — editing controls are hidden.", icon="📖")
 
-NON_PROJECT_ROWS = ["Org & Admin", "Trainning", "Seminário"]
-
 # Project work at the CATEGORY level: both project categories together, as opposed to
 # org/admin, training, or non-project meeting time.
 PROJECT_CATEGORIES = ["Projects", "Projects-Development"]
@@ -75,6 +73,13 @@ df_period = kd.filter_to_period(df, period)
 projects = kcache.load_projects(period["file"], period["sheet"])
 project_desc = projects.set_index("Project tag")["Short Description"] if "Short Description" in projects.columns else None
 
+# Real, tracker-registered projects -- for "Projects touched" tiles. The time log's own
+# distinct Project tags also include non-project buckets (Org & Admin, Consulting,
+# Trainning, Seminário, ...) and the occasional mistagged/orphan tag that was never
+# actually registered in the tracker; a positive match against the tracker itself catches
+# both, with no blocklist to keep growing as new buckets get added.
+REAL_PROJECT_TAGS = set(projects["Project tag"].astype(str).str.strip())
+
 tab_week, tab_month, tab_year = st.tabs(["📅 Week", "🗓️ Month", "📈 Year"])
 
 # ============================================================================================
@@ -115,7 +120,7 @@ with tab_week:
         n_updated = int((timesheet_week == "Yes").sum())
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Hours logged", kd.format_hm(total_week_hours))
-        m2.metric("Projects touched", int(week_df["Project"].nunique()))
+        m2.metric("Projects touched", int(week_df.loc[week_df["Project"].isin(REAL_PROJECT_TAGS), "Project"].nunique()))
         m3.metric("Entries", int(len(week_df)))
         m4.metric("Timesheet updated", f"{n_updated}/{n_tracked}" if n_tracked else "—",
                   help="Week entries marked 'Yes' in the Timesheet column of the time log below.")
@@ -383,10 +388,25 @@ with tab_month:
         month_df = df_period_labeled[df_period_labeled["Month"] == selected_month]
         month_name_only = selected_month.split(" ")[0]
 
+        # Real, tracker-cross-referenced active projects for this month -- shared by the
+        # chart below and the "Active projects" table further down, so the two can't drift
+        # apart. Not the raw time log's distinct Project tags: that set also contains
+        # non-project buckets (Org & Admin, Consulting, ...) and the occasional
+        # mistagged/orphan entry (a tag that was never actually registered in the tracker).
+        year_num = int(selected_month.split(" ")[1])
+        month_start = pd.Timestamp(year=year_num, month=kd.MONTH_ORDER.index(month_name_only) + 1, day=1)
+        month_end = month_start + pd.offsets.MonthEnd(0)
+        active_start = kd.effective_workload_start(projects)
+        active_mask = (
+            active_start.notna()
+            & (active_start <= month_end)
+            & (projects["Final Report Sent"].isna() | (projects["Final Report Sent"] >= month_start))
+        )
+
         month_hours = month_df["Hours (exact)"].sum()
         mm1, mm2, mm3, mm4 = st.columns(4)
         mm1.metric("Hours logged", kd.format_hm(month_hours))
-        mm2.metric("Projects touched", int(month_df["Project"].nunique()))
+        mm2.metric("Projects touched", int(month_df.loc[month_df["Project"].isin(REAL_PROJECT_TAGS), "Project"].nunique()))
         mm3.metric("Entries", int(len(month_df)))
         mm4.metric("Weeks with entries", int(month_df["_week_sort"].nunique()))
 
@@ -396,16 +416,16 @@ with tab_month:
         ])
 
         anchor("month-charts")
-        c1, c2 = st.columns([1.6, 1])
+        c1, c2 = st.columns([1.3, 1.6])
         with c1:
+            cat_hours = kc.category_hours_frame(month_df, CATEGORY_ORDER, CATEGORY_COLORS)
             st.plotly_chart(
-                kc.fig_major_task_share_by_category(month_df, selected_month, task_category, CATEGORY_ORDER, CATEGORY_COLORS),
+                kc.fig_category_donut(cat_hours, f"Category share — {selected_month}",
+                                       f"No hours logged yet for {selected_month}"),
                 width="stretch",
             )
-        with c2:
-            active_projects = sorted(
-                month_df.loc[~month_df["Project"].isin(NON_PROJECT_ROWS), "Project"].unique()
-            )
+
+            active_projects = sorted(projects.loc[active_mask, "Project tag"].dropna().unique())
             concluded_mask = (
                 projects["Final Report Sent"].notna()
                 & (projects["Final Report Sent"].dt.month_name() == month_name_only)
@@ -416,11 +436,9 @@ with tab_month:
                 kc.fig_active_vs_concluded(active_projects, concluded_projects, selected_month, project_desc),
                 width="stretch",
             )
-
-            cat_hours = kc.category_hours_frame(month_df, CATEGORY_ORDER, CATEGORY_COLORS)
+        with c2:
             st.plotly_chart(
-                kc.fig_category_donut(cat_hours, f"Category share — {selected_month}",
-                                       f"No hours logged yet for {selected_month}"),
+                kc.fig_major_task_share_by_category(month_df, selected_month, CATEGORY_ORDER, CATEGORY_COLORS),
                 width="stretch",
             )
 
@@ -437,16 +455,7 @@ with tab_month:
             "(same definition as the workload line in the Year tab; an Inherited Project "
             "only starts counting at its Begining)."
         )
-        year_num = int(selected_month.split(" ")[1])
-        month_start = pd.Timestamp(year=year_num, month=kd.MONTH_ORDER.index(month_name_only) + 1, day=1)
-        month_end = month_start + pd.offsets.MonthEnd(0)
         LISTING_COLS = [c for c in ["Project tag", "Project Trigger", "Type of Data", "Project Outputs", "Short Description"] if c in projects.columns]
-        active_start = kd.effective_workload_start(projects)
-        active_mask = (
-            active_start.notna()
-            & (active_start <= month_end)
-            & (projects["Final Report Sent"].isna() | (projects["Final Report Sent"] >= month_start))
-        )
         st.dataframe(projects.loc[active_mask, LISTING_COLS], width="stretch", hide_index=True)
 
 # ============================================================================================
@@ -457,24 +466,28 @@ with tab_year:
         ("Received vs finished", "year-received"), ("Time logged trends", "year-timelog"),
     ])
     weeks_logged = int(df_period["_week_sort"].nunique())
+    total_hours = df_period["Hours (exact)"].sum()
     project_hours = df_period.loc[df_period["Category"].isin(PROJECT_CATEGORIES), "Hours (exact)"].sum()
     dev_hours = df_period.loc[
         df_period["Major task name (chart)"].isin(DEV_MAJOR_TASKS), "Hours (exact)"].sum()
     weeks_label = f"{weeks_logged} logged week" + ("" if weeks_logged == 1 else "s")
+    project_pct = f" ({project_hours / total_hours * 100:.0f}%)" if total_hours else ""
+    dev_pct = f" ({dev_hours / total_hours * 100:.0f}%)" if total_hours else ""
     ym1, ym2, ym3 = st.columns(3)
     ym1.metric("Projects touched",
-               int(df_period.loc[~df_period["Project"].isin(NON_PROJECT_ROWS), "Project"].nunique()))
+               int(df_period.loc[df_period["Project"].isin(REAL_PROJECT_TAGS), "Project"].nunique()))
     ym1.caption(f"Distinct projects with logged hours · {weeks_label}")
     ym2.metric("Avg per logged week — projects",
                kd.format_hm(project_hours / weeks_logged) if weeks_logged else "—",
                help="Hours in the **Projects** and **Projects-Development** categories "
                     "(the category, not the major task), divided by the weeks with entries.")
-    ym2.caption(f"{kd.format_hm(project_hours)} total · Projects + Projects-Development")
-    ym3.metric("Development — tools & AI", kd.format_hm(dev_hours) if dev_hours else "—",
-               help="Total hours on the **Tools** and **AI Skills** major tasks, wherever "
-                    "they were logged — internal work and project work both count.")
-    ym3.caption((f"≈ {kd.format_hm(dev_hours / weeks_logged)} per logged week" if weeks_logged
-                 else "no logged weeks yet") + " · internal or project")
+    ym2.caption(f"{kd.format_hm(project_hours)}{project_pct} total · Projects + Projects-Development")
+    ym3.metric("Avg per logged week — tools & AI",
+               kd.format_hm(dev_hours / weeks_logged) if weeks_logged else "—",
+               help="Hours on the **Tools** and **AI Skills** major tasks, wherever they "
+                    "were logged — internal work and project work both count — divided "
+                    "by the weeks with entries.")
+    ym3.caption(f"{kd.format_hm(dev_hours)}{dev_pct} total · internal or project")
     st.subheader(f"Projects received vs finished — {period_label}", anchor="year-received")
     st.caption(
         "Driven by the project tracker sheet for this period. For complexity, who-we-work-with, "

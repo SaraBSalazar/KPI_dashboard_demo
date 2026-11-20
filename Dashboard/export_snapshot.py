@@ -365,6 +365,10 @@ def period_panels(pkey, period, df, raw_df, category_order, cat_colors, task_cat
     the whole set at once (as choosing another period in the dashboard would)."""
     df_period = kd.filter_to_period(df, period)
     projects = kd.load_projects(period["file"], period["sheet"])
+    # Real, tracker-registered projects -- for "Projects touched" tiles (see the same set
+    # in KPI_Report.py). A positive match against the tracker, not a blocklist of known
+    # non-project buckets, so a mistagged/orphan tag doesn't get counted either.
+    real_project_tags = set(projects["Project tag"].astype(str).str.strip())
     meetings = kd.load_meetings(period["file"], period["meetings_sheet"])
     project_desc = (projects.set_index("Project tag")["Short Description"]
                     if "Short Description" in projects.columns else None)
@@ -424,7 +428,7 @@ def period_panels(pkey, period, df, raw_df, category_order, cat_colors, task_cat
             return (
                 tiles(
                     tile("Hours logged", kd.format_hm(week_df["Hours (exact)"].sum())),
-                    tile("Projects touched", int(week_df["Project"].nunique())),
+                    tile("Projects touched", int(week_df.loc[week_df["Project"].isin(real_project_tags), "Project"].nunique())),
                     tile("Entries", int(len(week_df))),
                     tile("Timesheet updated", f"{n_updated}/{n_tracked}" if n_tracked else "-",
                          "entries marked Yes in the time log"),
@@ -459,12 +463,12 @@ def period_panels(pkey, period, df, raw_df, category_order, cat_colors, task_cat
             return (
                 tiles(
                     tile("Hours logged", kd.format_hm(month_df["Hours (exact)"].sum())),
-                    tile("Projects touched", int(month_df["Project"].nunique())),
+                    tile("Projects touched", int(month_df.loc[month_df["Project"].isin(real_project_tags), "Project"].nunique())),
                     tile("Entries", int(len(month_df))),
                     tile("Weeks with entries", int(month_df["_week_sort"].nunique())),
                 )
                 + fig(lambda d, _m=month_df, _l=month: kc.fig_major_task_share_by_category(
-                    _m, _l, task_category, category_order, cat_colors(d)))
+                    _m, _l, category_order, cat_colors(d)))
                 + '<div class="grid-2">'
                 + fig(lambda d, _m=month_df, _l=month: kc.fig_category_donut(
                     kc.category_hours_frame(_m, category_order, cat_colors(d)),
@@ -551,7 +555,8 @@ def period_panels(pkey, period, df, raw_df, category_order, cat_colors, task_cat
                         for b in kd.turnaround_by_size(lead_df)]))
     turn.append(note(html_mod.escape(kd.lead_time_coverage_note(cov)).replace("**", "")))
     turn.append(fig(lambda d: kc.fig_lead_time_stages(
-        lead_df, f"Project turnaround — {period['label']}", pause_notes=pause_notes)))
+        lead_df, f"Project turnaround — {period['label']}", pause_notes=pause_notes,
+        period_start=period["start"])))
     pause_lines = []
     for _, r in (lead_df.iterrows() if len(lead_df) else []):
         for g in (r.get("gaps") or []):
@@ -659,23 +664,29 @@ def tools_panel(tl_palette):
         body.append(note("No tools inventoried yet (or tools.xlsx was locked while exporting)."))
         return panel("tools", "".join(body))
 
-    n_ai = int(tools_df["Type of tool"].astype(str).str.contains("AI Skill", case=False, na=False).sum())
+    # A deprecated tool is still on record, but no longer counted as one of "what's built
+    # and in use" -- same split as the live Tools page (3_Tools.py).
+    is_deprecated = tools_df["Status"].astype(str).str.strip() == "Deprecated"
+    active_tools = tools_df[~is_deprecated]
+    deprecated_tools = tools_df[is_deprecated]
+
+    n_ai = int(active_tools["Type of tool"].astype(str).str.contains("AI Skill", case=False, na=False).sum())
     body.append(tiles(
-        tile("Tools built", len(tools_df)),
+        tile("Tools built", len(active_tools)),
         tile("AI Skills", n_ai),
-        tile("Tool types", int(tools_df["Type of tool"].astype(str).str.strip()
+        tile("Tool types", int(active_tools["Type of tool"].astype(str).str.strip()
                                .replace("", pd.NA).nunique(dropna=True))),
     ))
     body.append('<div class="grid-2">'
-                + fig(lambda d: kc.fig_tools_counts(tools_df["Type of tool"], "By type of tool",
-                                                    tl_palette(d)[0], names=tools_df["Name"]))
-                + fig(lambda d: kc.fig_tools_counts(tools_df["Use"], "By use",
-                                                    tl_palette(d)[2], names=tools_df["Name"]))
+                + fig(lambda d: kc.fig_tools_counts(active_tools["Type of tool"], "By type of tool",
+                                                    tl_palette(d)[0], names=active_tools["Name"]))
+                + fig(lambda d: kc.fig_tools_counts(active_tools["Use"], "By use",
+                                                    tl_palette(d)[2], names=active_tools["Name"]))
                 + "</div>")
-    body.append(fig(lambda d: kc.fig_tools_counts(tools_df["Project Origin"], "By project origin",
-                                                  tl_palette(d)[1], names=tools_df["Name"])))
+    body.append(fig(lambda d: kc.fig_tools_counts(active_tools["Project Origin"], "By project origin",
+                                                  tl_palette(d)[1], names=active_tools["Name"])))
     cards = []
-    for _, row in tools_df.iterrows():
+    for _, row in active_tools.iterrows():
         meta = " · ".join(p for p in (
             esc(row["Type of tool"]),
             f"built in {esc(row['Built in'])}" if esc(row["Built in"]) else "",
@@ -689,6 +700,26 @@ def tools_panel(tl_palette):
         cards.append(f'<div class="card"><h4>{esc(row["Name"])}</h4><div class="meta">{meta}</div>'
                      f"<ul>{desc_items}</ul>{lim}{gain}</div>")
     body.append(f'<div class="cards">{"".join(cards)}</div>')
+
+    if len(deprecated_tools):
+        body.append(note(f"<strong>Deprecated ({len(deprecated_tools)})</strong> — no longer the thing "
+                         "to reach for, for whatever reason, kept here for the record rather "
+                         "than deleted."))
+        dep_cards = []
+        for _, row in deprecated_tools.iterrows():
+            reason = esc(row["Why deprecated"])
+            reason_html = f'<p class="meta">🗃️ Deprecated — {reason}</p>' if reason else '<p class="meta">🗃️ Deprecated</p>'
+            meta = " · ".join(p for p in (
+                esc(row["Type of tool"]),
+                f"built in {esc(row['Built in'])}" if esc(row["Built in"]) else "",
+                f"use: {esc(row['Use'])}" if esc(row["Use"]) else "",
+                f"origin: {esc(row['Project Origin'])}" if esc(row["Project Origin"]) else "",
+            ) if p)
+            desc_items = "".join(f"<li>{esc(p.strip())}</li>"
+                                 for p in str(row.get("Description") or "").split(";") if p.strip())
+            dep_cards.append(f'<div class="card"><h4>{esc(row["Name"])}</h4>{reason_html}'
+                             f'<div class="meta">{meta}</div><ul>{desc_items}</ul></div>')
+        body.append(f'<div class="cards" style="opacity:0.55">{"".join(dep_cards)}</div>')
     return panel("tools", "".join(body))
 
 

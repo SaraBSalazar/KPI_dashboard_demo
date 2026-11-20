@@ -26,8 +26,18 @@ def _clean(value):
     return "" if v in ("", "nan", "None") else v
 
 
-def render_tool_card(row):
-    st.markdown(f"### {_clean(row['Name'])}")
+def render_tool_card(row, faded=False):
+    """`faded=True` (the Deprecated section) grays the whole card out via markdown's :gray[]
+    rather than real CSS opacity -- Streamlit widgets can't be wrapped in an injected <div>
+    across multiple st calls, so this is the robust way to make a card read as secondary."""
+    deprecated = _clean(row["Status"]) == "Deprecated"
+    name = _clean(row["Name"])
+    title = f"### {name}" if not faded else f"### :gray[{name}]"
+    st.markdown(title)
+    if deprecated:
+        reason = _clean(row["Why deprecated"])
+        st.caption("🗃️ Deprecated" + (f" — {reason}" if reason else ""))
+
     meta = " · ".join(
         part for part in (
             _clean(row["Type of tool"]),
@@ -39,15 +49,21 @@ def render_tool_card(row):
     if meta:
         st.caption(meta)
 
-    if _clean(row["Description"]):
-        for part in _clean(row["Description"]).split(";"):
-            part = part.strip()
-            if part:
-                st.markdown(f"- {part}")
-    if _clean(row["Limitations"]):
-        st.markdown(f":red[**-** {_clean(row['Limitations'])}]")
-    if _clean(row["Future gain"]):
-        st.markdown(f":blue[**→** {_clean(row['Future gain'])}]")
+    desc_lines = [p.strip() for p in _clean(row["Description"]).split(";") if p.strip()]
+    if faded:
+        for part in desc_lines:
+            st.markdown(f":gray[- {part}]")
+        if _clean(row["Limitations"]):
+            st.markdown(f":gray[**-** {_clean(row['Limitations'])}]")
+        if _clean(row["Future gain"]):
+            st.markdown(f":gray[**→** {_clean(row['Future gain'])}]")
+    else:
+        for part in desc_lines:
+            st.markdown(f"- {part}")
+        if _clean(row["Limitations"]):
+            st.markdown(f":red[**-** {_clean(row['Limitations'])}]")
+        if _clean(row["Future gain"]):
+            st.markdown(f":blue[**→** {_clean(row['Future gain'])}]")
 
 
 def pick_or_new(label, options, current, key):
@@ -87,6 +103,17 @@ def render_tool_editor(tools_df, row):
                                  _clean(row["Project Origin"]), f"torigin_{key}")
             limitations = st.text_area("Limitations", value=_clean(row["Limitations"]), key=f"tlim_{key}")
             future_gain = st.text_area("Future gain", value=_clean(row["Future gain"]), key=f"tgain_{key}")
+            st.caption("Deprecated = still on record, but not the thing to reach for anymore -- "
+                       "it moves to its own (faded) section below instead of the gallery/overview.")
+            dep_col, sup_col = st.columns([1, 2])
+            current_status = _clean(row["Status"])
+            deprecated = dep_col.checkbox("Deprecated", value=current_status == "Deprecated",
+                                          key=f"tdep_{key}")
+            why_deprecated = sup_col.text_input(
+                "Why deprecated", value=_clean(row["Why deprecated"]), key=f"tsup_{key}",
+                placeholder="e.g. integrated into Project Closer, or no longer needed",
+                disabled=not deprecated,
+            )
 
             if st.form_submit_button("💾 Save tool"):
                 clean_name = new_name.strip()
@@ -101,7 +128,9 @@ def render_tool_editor(tools_df, row):
                     for col, value in (("Name", clean_name), ("Description", description),
                                        ("Type of tool", type_of_tool), ("Built in", built_in),
                                        ("Use", use), ("Project Origin", origin),
-                                       ("Limitations", limitations), ("Future gain", future_gain)):
+                                       ("Limitations", limitations), ("Future gain", future_gain),
+                                       ("Status", "Deprecated" if deprecated else ""),
+                                       ("Why deprecated", why_deprecated if deprecated else "")):
                         edited.loc[mask, col] = value
                     try:
                         kd.save_tools(edited)
@@ -133,14 +162,23 @@ except PermissionError:
 if not len(tools_df):
     st.info("tools.xlsx has no rows yet — add your first tool below.")
 else:
+    is_deprecated = tools_df["Status"].astype(str).str.strip() == "Deprecated"
+    active_tools = tools_df[~is_deprecated]
+    deprecated_tools = tools_df[is_deprecated]
+
     # --- Overview: headline numbers + breakdown charts --------------------------------------
+    # Deprecated tools are still on record (full table, editable), but a retired tool isn't
+    # part of "what's built and in use" -- the overview/gallery count and chart only active
+    # ones, the same way a closed project drops out of the turnaround page's live figures.
     anchor("tools-overview")
-    types = tools_df["Type of tool"].astype(str).str.strip()
+    types = active_tools["Type of tool"].astype(str).str.strip()
     n_ai_skills = int(types.str.contains("AI Skill", case=False, na=False).sum())
-    built_vals = tools_df["Built in"].astype(str).str.strip().replace("nan", "")
+    built_vals = active_tools["Built in"].astype(str).str.strip().replace("nan", "")
     latest_period = max((v for v in built_vals if v), default="")
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Tools built", len(tools_df))
+    m1.metric("Tools built", len(active_tools),
+              delta=f"{len(deprecated_tools)} deprecated" if len(deprecated_tools) else None,
+              delta_color="off")
     m2.metric("AI Skills", n_ai_skills)
     m3.metric("Tool types", int(types.replace("", pd.NA).nunique(dropna=True)))
     m4.metric(f"Built in {latest_period}" if latest_period else "Built this period",
@@ -149,26 +187,26 @@ else:
     st.caption("Hover a bar to see which tools it covers.")
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.plotly_chart(kc.fig_tools_counts(tools_df["Type of tool"], "By type of tool",
-                                            PALETTE[0], names=tools_df["Name"]), width="stretch")
+        st.plotly_chart(kc.fig_tools_counts(active_tools["Type of tool"], "By type of tool",
+                                            PALETTE[0], names=active_tools["Name"]), width="stretch")
     with c2:
-        st.plotly_chart(kc.fig_tools_counts(tools_df["Use"], "By use",
-                                            PALETTE[2], names=tools_df["Name"]), width="stretch")
+        st.plotly_chart(kc.fig_tools_counts(active_tools["Use"], "By use",
+                                            PALETTE[2], names=active_tools["Name"]), width="stretch")
     with c3:
-        st.plotly_chart(kc.fig_tools_counts(tools_df["Project Origin"], "By project origin",
-                                            PALETTE[1], names=tools_df["Name"]), width="stretch")
+        st.plotly_chart(kc.fig_tools_counts(active_tools["Project Origin"], "By project origin",
+                                            PALETTE[1], names=active_tools["Name"]), width="stretch")
 
     # --- Gallery: filterable cards -----------------------------------------------------------
     st.subheader("Gallery", anchor="tools-gallery")
     f1, f2, _ = st.columns([1.2, 1.2, 2])
-    type_options = sorted({_clean(v) for v in tools_df["Type of tool"] if _clean(v)})
-    use_options = sorted({_clean(v) for v in tools_df["Use"] if _clean(v)})
+    type_options = sorted({_clean(v) for v in active_tools["Type of tool"] if _clean(v)})
+    use_options = sorted({_clean(v) for v in active_tools["Use"] if _clean(v)})
     type_filter = f1.multiselect("Type of tool", type_options, key="tools_type_filter")
     use_filter = f2.multiselect("Use", use_options, key="tools_use_filter")
     if not READONLY:
         st.caption("Use the ✏️ under a card to edit that tool — changes save to tools.xlsx.")
 
-    shown = tools_df
+    shown = active_tools
     if type_filter:
         shown = shown[shown["Type of tool"].astype(str).str.strip().isin(type_filter)]
     if use_filter:
@@ -184,6 +222,19 @@ else:
                 if not READONLY:
                     render_tool_editor(tools_df, row)
 
+    # --- Deprecated: same full card, just faded, and out of the counts/charts above ---------
+    if len(deprecated_tools):
+        with st.expander(f"🗃️ Deprecated ({len(deprecated_tools)})", expanded=False):
+            st.caption("No longer the thing to reach for, for whatever reason — kept here "
+                       "for the record rather than deleted.")
+            dep_cols = st.columns(2)
+            for i, (_, row) in enumerate(deprecated_tools.iterrows()):
+                with dep_cols[i % 2]:
+                    with st.container(border=True):
+                        render_tool_card(row, faded=True)
+                        if not READONLY:
+                            render_tool_editor(tools_df, row)
+
 # --- Full table ------------------------------------------------------------------------------
 st.subheader("All tools", anchor="tools-table")
 if READONLY:
@@ -195,6 +246,8 @@ else:
         column_config={
             "Name": st.column_config.TextColumn("Name", required=True),
             "Description": st.column_config.TextColumn("Description", width="large"),
+            "Status": st.column_config.SelectboxColumn("Status", options=kd.TOOL_STATUS_OPTIONS),
+            "Why deprecated": st.column_config.TextColumn("Why deprecated"),
         },
     )
     if st.button("💾 Save changes to tools.xlsx"):

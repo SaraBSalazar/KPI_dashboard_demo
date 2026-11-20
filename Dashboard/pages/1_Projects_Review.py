@@ -136,10 +136,12 @@ with st.expander("ℹ️ How these numbers are calculated"):
   out of all four tiles: there's no external user waiting, so their days aren't service
   turnaround. They also have no report to send, so the **Closing Day** ends their working
   stage (and is what shows under *Report sent* in the table below).
-- **Forgiven pauses** — tick **forgive** next to a pause's note (below) to draw just that
-  pause **faded and hatched in gray**, and subtract its days from this project's working
-  and total figures below — so a stopped-and-explained week doesn't inflate the medians,
-  without excusing the rest of the project the way Internal does.
+- **Forgiven pauses** — each pause (below) carries two separate forgive checkboxes, one for
+  *effective working time*, one for *total turnaround to user*: tick either (or both) to
+  draw that pause **faded and hatched in gray** and subtract its days from just that
+  figure, without excusing the rest of the project the way Internal does. They're
+  independent on purpose — a pause that shouldn't count as real work might still be time
+  the user genuinely spent waiting (forgive working time only), or the reverse.
 - **Consulting blocks** don't appear here at all — a standing advisory thread has no start
   and no report to deliver, so there's no turnaround to measure. They're still counted in
   the project total above, and have their own section further down.
@@ -155,9 +157,12 @@ with st.expander("ℹ️ How these numbers are calculated"):
   Final Report Sent. Rows with impossible dates are flagged and left out, as are internal
   projects; forgiven pauses (above) are subtracted rather than excluding the project.
 - **The second row is three ways of measuring the same projects' duration** — the headline
-  *total turnaround* (first contact → final report), the work-only span inside it (*time to
-  deliver*), and the administrative span (*Timesheet tracking*, Register Project → Closing Day,
-  which starts after first contact and runs past the report to the close).
+  *total turnaround to user* (first contact → final report), the work-only span inside it
+  (*time to deliver — effective working time*), and the administrative span (*Timesheet
+  tracking*, Register Project → Closing Day, which starts after first contact and runs
+  past the report to the close). If Final Report Sent ever lands after Closing Day, that
+  date is used in place of Closing Day here, so a report that trailed the recorded close
+  doesn't shrink the span.
 - **Turnaround by project size** answers "how long for a job this size?" by splitting the
   projects into bands — under 10 h, 10–30 h, over 30 h — and taking a median in each. It's
   the size-adjusted view, done by comparing like with like rather than dividing days by
@@ -195,14 +200,17 @@ st.caption(kd.lead_time_coverage_note(lead_cov))
 # administrative span Timesheet tracks.
 lead_effort = kd.lead_time_effort(lead_df)
 ef1, ef2, ef3, ef4 = st.columns(4)
-ef1.metric("Typical total turnaround", kd.format_days(lead_stats["median_total"]),
+ef1.metric("Typical total turnaround to user", kd.format_days(lead_stats["median_total"]),
            help="What the user experiences end to end — median days from first contact to "
                 "the final report, so it carries the time waiting on us as well as the work "
-                "itself. This is the figure the effort-weighted tile re-averages.")
-ef2.metric("Typical time to deliver", kd.format_days(lead_stats["median_working"]),
+                "itself. This is the figure the effort-weighted tile re-averages. A pause "
+                "ticked \"forgive\" for total turnaround (below) is excused from this one.")
+ef2.metric("Typical time to deliver — effective working time",
+           kd.format_days(lead_stats["median_working"]),
            help="The real workload time — median days from work starting to the final "
                 "report, for delivered projects. The work-only part of the total turnaround "
-                "on its left. Calendar days across the working span, not hours of effort.")
+                "on its left. Calendar days across the working span, not hours of effort. A "
+                "pause ticked \"forgive\" for working time (below) is excused from this one.")
 ef3.metric("Timesheet tracking", kd.format_days(lead_effort["median_timesheet"]),
            help="Median days from Register Project to Closing Day — the span Timesheet tracks. "
                 "Longer than the two on its left by design: it starts at registration and "
@@ -211,11 +219,11 @@ ef3.metric("Timesheet tracking", kd.format_days(lead_effort["median_timesheet"])
 # Same question the two rate metrics were trying to answer -- how long for the hours a job
 # takes -- but by comparing like with like. A big project taking longer isn't news; what's
 # worth seeing is a small one that took a large one's time.
-st.caption("**Typical total turnaround by project size** — what to expect for the job in "
-           "front of you, rather than one median across jobs of every size.")
+st.caption("**Typical total turnaround to user by project size** — what to expect for the "
+           "job in front of you, rather than one median across jobs of every size.")
 size_bands = kd.turnaround_by_size(lead_df)
 for col, band in zip(st.columns(len(size_bands)), size_bands):
-    col.metric(f"{band['label']} ({band['range_label']})",
+    col.metric(f"Typical total turnaround to user — {band['label']} ({band['range_label']})",
                kd.format_days(band["median_days"]),
                delta=f"{band['n']} project{'' if band['n'] == 1 else 's'}",
                delta_color="off",
@@ -232,7 +240,7 @@ if len(flagged):
                "Fix them on the **Add Data** page.", icon="📅")
 
 st.plotly_chart(kc.fig_lead_time_stages(lead_df, f"Project turnaround — {period_label}",
-                                        pause_notes=pause_notes),
+                                        pause_notes=pause_notes, period_start=period["start"]),
                 width="stretch")
 
 with st.expander("Per-project turnaround table"):
@@ -266,38 +274,50 @@ if paused_rows:
                      f"{'' if kd.PAUSE_MIN_WEEKS == 1 else 's'} with no hours logged for the "
                      "project, between two active weeks.")
         st.caption(
-            f"{pause_def} Add a note saying why (e.g. *waiting for user*), and tick "
-            "**forgive** if it shouldn't count toward the medians below (its days are "
-            "then subtracted from just this project's working/total figures, rather "
-            "than excluding the whole project the way Internal does). Kept in "
-            "project_pause_notes.json; both show in the chart's tooltip, and a forgiven "
-            "pause draws faded and hatched."
+            f"{pause_def} Add a note saying why (e.g. *waiting for user*), and tick either "
+            "**forgive** box if it shouldn't count toward that figure below — *working* "
+            "excuses it from Typical time to deliver (effective working time), *total* "
+            "excuses it from Typical total turnaround to user. They're independent: tick "
+            "one, both, or neither, without excusing the rest of the project the way "
+            "Internal does. Kept in project_pause_notes.json; both show in the chart's "
+            "tooltip, and a pause forgiven from either draws faded and hatched."
             if not READONLY else pause_def
         )
+        default_entry = {"note": "", "forgive_working": False, "forgive_total": False}
         changed = False
         for r in paused_rows:
             tag = r["Project tag"]
             for g in r["gaps"]:
                 key = kd.pause_key(g)
-                existing = pause_notes.get(tag, {}).get(key, {"note": "", "forgive": False})
+                existing = pause_notes.get(tag, {}).get(key, default_entry)
                 span = f"{g['start'].strftime('%d %b %Y')} → {g['end'].strftime('%d %b %Y')}"
                 label = f"**{tag}** — paused {g['weeks']} week{'s' if g['weeks'] != 1 else ''} ({span})"
                 if READONLY:
                     bits = []
                     if existing["note"]:
                         bits.append(f"*{existing['note']}*")
-                    if existing["forgive"]:
-                        bits.append("forgiven")
+                    if existing["forgive_working"] and existing["forgive_total"]:
+                        bits.append("forgiven (working + total)")
+                    elif existing["forgive_working"]:
+                        bits.append("forgiven (working time)")
+                    elif existing["forgive_total"]:
+                        bits.append("forgiven (total turnaround)")
                     st.markdown(label + (f" — {', '.join(bits)}" if bits else ""))
                     continue
-                c1, c2, c3 = st.columns([1.4, 2, 0.7])
+                c1, c2, c3, c4 = st.columns([1.3, 1.8, 0.65, 0.65])
                 c1.markdown(label)
                 note = c2.text_input("Why did it stop?", value=existing["note"],
                                      key=f"pause_{tag}_{key}", placeholder="e.g. waiting for user",
                                      label_visibility="collapsed")
-                forgive = c3.checkbox("Forgive", value=existing["forgive"], key=f"forgive_{tag}_{key}")
-                if note != existing["note"] or forgive != existing["forgive"]:
-                    pause_notes.setdefault(tag, {})[key] = {"note": note, "forgive": forgive}
+                forgive_working = c3.checkbox("Forgive (working)", value=existing["forgive_working"],
+                                              key=f"forgive_working_{tag}_{key}")
+                forgive_total = c4.checkbox("Forgive (total)", value=existing["forgive_total"],
+                                            key=f"forgive_total_{tag}_{key}")
+                if (note != existing["note"] or forgive_working != existing["forgive_working"]
+                        or forgive_total != existing["forgive_total"]):
+                    pause_notes.setdefault(tag, {})[key] = {
+                        "note": note, "forgive_working": forgive_working, "forgive_total": forgive_total,
+                    }
                     changed = True
         if not READONLY and changed:
             try:

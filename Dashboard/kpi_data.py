@@ -62,6 +62,12 @@ RAW_COLUMNS = [
 # Historical major-task values renamed on load; saving a row afterwards migrates the file.
 MAJOR_TASK_RENAMES = {"AI Agent": "AI Skills", "Study": "Plan/Study"}
 
+# A task that should read as one consistent color on the merged by-month/by-task charts
+# even though its real rows legitimately span categories -- see _task_category_priority's
+# use of this below. Doesn't touch the rows' own logged Category. Empty here since this
+# demo's fake data has no task that genuinely needs the override.
+TASK_CATEGORY_COLOR_OVERRIDES = {}
+
 # Shared with both KPI_Report.py's sidebar and the Add Data page -- picking a category or
 # major task for a new row is exactly where this reference is most useful.
 GLOSSARY_MD = """
@@ -78,8 +84,10 @@ GLOSSARY_MD = """
 - **Trainning** — training attended or given.
 
 **Notable major tasks**
-- **Internal org** — communications, emails, personal organization, and group organization
-  requirements (including time-tracking upkeep).
+- **Meetings/Comms** — project-specific meetings, but counts as communications as well
+  (emails, Slack, async check-ins about the project), not just the meeting itself.
+- **Internal org** — communications, emails, and group organization requirements (including
+  Timesheet and other time-tracking upkeep).
 - **AI Skills** (formerly logged as "AI Agent") — development of AI-based tools/skills as part
   of a Projects-Development initiative.
 - **Plan/Study** (formerly logged as "Study") — planning work and studying documentation,
@@ -132,16 +140,27 @@ def _lighten(hex_color, amount):
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+# Categories that are related but don't share a name prefix (so build_category_palette's
+# prefix heuristic can't group them on its own): {category: the family it tints toward}.
+# Empty here since this demo's fake categories don't need one -- fill in a {category: family}
+# pairing if your own data has a related category that isn't already a name prefix match.
+CATEGORY_FAMILY_ALIASES = {}
+
+
 def build_category_palette(df, category_col="Category", value_col="Hours (exact)", dark=False):
     """Category display order and a color per category, both derived from whatever
     categories are actually present in `df`. Related categories (one name a prefix of
-    another, e.g. "Projects" / "Projects-Development") get tints of one hue and sit next
-    to each other; every other family gets its own palette hue."""
+    another, e.g. "Projects" / "Projects-Development", or an explicit pairing in
+    CATEGORY_FAMILY_ALIASES) get tints of one hue and sit next to each other; every other
+    family gets its own palette hue."""
     palette = TL_PALETTE_DARK if dark else TL_PALETTE
     totals = df.groupby(category_col)[value_col].sum()
     names = list(totals.index)
 
     def family_key(name):
+        alias = CATEGORY_FAMILY_ALIASES.get(name)
+        if alias and alias in names:
+            return alias
         prefixes = [n for n in names if n != name and name.lower().startswith(n.lower())]
         return min(prefixes, key=len) if prefixes else name
 
@@ -223,6 +242,18 @@ def load_timelog(dark=False):
         return categories.mode().iat[0]
 
     task_category = df.groupby("Major task name (chart)")["Category"].agg(_task_category_priority)
+    # TASK_CATEGORY_COLOR_OVERRIDES: some tasks' real rows legitimately span categories (a
+    # project-specific "Plan/Study" or "External Meeting" can land under Projects-Development
+    # just because that's the project's own category) -- the rows themselves are correct as
+    # logged, and this doesn't touch them. It only overrides which single color this task
+    # resolves to for the *merged* charts (Major-task hours by month, Major task share of
+    # total hours), so one task reads as one consistent color over time instead of flipping
+    # to Projects-Development's shade because of a single project's categorization. Charts
+    # that split a task by its rows' real Category (the Month donut, hours-by-project-task)
+    # are unaffected -- they never consult this map for color, only this one's row order.
+    for task, cat in TASK_CATEGORY_COLOR_OVERRIDES.items():
+        if task in task_category.index and cat in category_order:
+            task_category.loc[task] = cat
 
     return df, category_order, category_colors, task_category, raw_df
 
@@ -868,8 +899,14 @@ def save_goals(edited_df):
 TOOLS_PATH = DATA_DIR / "tools.xlsx"
 TOOLS_COLS = [
     "Name", "Description", "Type of tool", "Built in", "Use", "Project Origin",
-    "Limitations", "Future gain",
+    "Limitations", "Future gain", "Status", "Why deprecated",
 ]
+# "Status" is "" (active) or "Deprecated" -- a tool that's still real and worth keeping on
+# record, but no longer the thing to reach for. "Why deprecated" is a free-text reason, only
+# meaningful once Status is "Deprecated" -- it isn't always "folded into another tool"
+# (e.g. "integrated into Project Closer"); it could just as well be "no longer needed" or
+# "replaced by a manual process", so it's left open rather than framed as a successor field.
+TOOL_STATUS_OPTIONS = ["", "Deprecated"]
 
 
 def load_tools():
@@ -879,6 +916,10 @@ def load_tools():
     message (the file is often open in Excel)."""
     tools_df = pd.read_excel(TOOLS_PATH, sheet_name=0)
     tools_df.columns = [str(c).strip() for c in tools_df.columns]
+    # "Superseded by" was this column's name before it was generalized -- migrate anything
+    # already written under it rather than silently dropping it.
+    if "Why deprecated" not in tools_df.columns and "Superseded by" in tools_df.columns:
+        tools_df["Why deprecated"] = tools_df["Superseded by"]
     for col in TOOLS_COLS:
         if col not in tools_df.columns:
             tools_df[col] = ""
@@ -1146,6 +1187,22 @@ def effective_workload_start(projects):
     return start
 
 
+def effective_closing_date(projects):
+    """The date a project counts as administratively closed, for the turnaround/Timesheet-
+    tracking math: normally Closing Day, but if Final Report Sent was logged *after* it
+    (the report trailed the recorded close -- e.g. hours kept being logged under the
+    project after Closing Day was set), use Final Report Sent instead so the tracked span
+    isn't understated by a Closing Day that didn't actually mark the end of the work.
+    Doesn't change whether a project counts as concluded (that's still Closing Day's mere
+    presence, everywhere else) -- only which date the duration is measured to."""
+    closing = projects["Closing Day"].copy()
+    if "Final Report Sent" in projects.columns:
+        report = projects["Final Report Sent"]
+        later_report = closing.notna() & report.notna() & (report > closing)
+        closing = closing.where(~later_report, report)
+    return closing
+
+
 def project_hours_with_source(projects, df_period=None):
     """Per-project hours, as {project_tag: hours} and {project_tag: source}, source being
     'time log' or 'Timesheet'. Prefers the personal time log (`df_period`, already filtered to
@@ -1161,7 +1218,7 @@ def project_hours_with_source(projects, df_period=None):
     timelog_hours = pd.Series(dtype=float)
     if df_period is not None and len(df_period):
         timelog_hours = (
-            df_period[~df_period["Project"].isin(["ADAorg", "Trainning", "Seminário"])]
+            df_period[~df_period["Project"].isin(["Org & Admin", "Trainning", "Seminário"])]
             .groupby("Project")["Hours (exact)"].sum()
         )
 
@@ -1277,6 +1334,12 @@ def lead_time_table(projects, df_period=None, period_end=None, pause_notes=None)
     Two stages per project, both from the tracker's dates (the formal record):
       waiting  = first contact -> Begining   (request sitting before work starts)
       working  = Begining -> Final Report Sent (or -> today while still running)
+    These (`working_days`, `total_days`, `done`, `work_end`) are the real-work metric the
+    medians below are built on, and don't change based on Closing Day.
+
+    `admin_done` / `bar_end` are the administrative counterpart, used only by the chart to
+    draw the bar itself as Begining -> Closing Day (or -> today while not yet closed) --
+    the formal Timesheet record, kept deliberately separate from the real-work math above.
 
     `period_end` caps that "today" at the end of the reporting period being reviewed, so a
     closed period doesn't sprout bars into the months after it -- for a period still running
@@ -1313,10 +1376,14 @@ def lead_time_table(projects, df_period=None, period_end=None, pause_notes=None)
                      stop-and-RESTART; a project touched once and never again needs this to
                      show up as paused at all.
 
-    `pause_notes` (from load_pause_notes: {project: {gap-key: {"note", "forgive"}}}) lets
-    any individual pause be excused from the medians without excusing the whole project --
-    a pause ticked "forgive" has its days subtracted from `working_days_counted` /
-    `total_days_counted`, which lead_time_summary and turnaround_by_size use instead of
+    `pause_notes` (from load_pause_notes: {project: {gap-key: {"note", "forgive_working",
+    "forgive_total"}}}) lets any individual pause be excused from either median
+    independently, without excusing the whole project: "forgive_working" subtracts its days
+    from `working_days_counted` alone (Typical time to deliver / effective working time),
+    "forgive_total" subtracts them from the working-portion of `total_days_counted` alone
+    (Typical total turnaround to user) -- a pause can be forgiven from one, the other,
+    both, or neither. `working_days_counted` and `total_days_counted` are what
+    lead_time_summary and turnaround_by_size use instead of
     the raw `working_days` / `total_days` (kept as-is for the chart and the per-project
     table, since the time off still really happened).
 
@@ -1328,12 +1395,13 @@ def lead_time_table(projects, df_period=None, period_end=None, pause_notes=None)
     pause_notes = pause_notes or {}
     has_desc = "Short Description" in projects.columns
     hours_by_tag, _hours_source = project_hours_with_source(projects, df_period)
+    effective_closing = effective_closing_date(projects)
     # The log's very first week ever: a project already active then may well have started
     # earlier, before time tracking existed -- the log simply can't see it.
     log_start = (df_period["_week_sort"].min()
                  if df_period is not None and len(df_period) else None)
     rows = []
-    for _, p in projects.iterrows():
+    for idx, p in projects.iterrows():
         tag = str(p.get("Project tag") or "").strip()
         if not tag:
             continue
@@ -1353,7 +1421,13 @@ def lead_time_table(projects, df_period=None, period_end=None, pause_notes=None)
         real_start, pre_log = pd.NaT, False
         if act:
             if act["first"] == log_start and start < log_start:
+                # No log evidence reaches back far enough to say when work really began --
+                # fall back to the tracker's own Begining (the best date actually on
+                # record) rather than leaving the chart's diamond blank. `pre_log` still
+                # flags this for the table ("before the log"): it's a known date, not a
+                # measured one.
                 pre_log = True
+                real_start = start
             else:
                 real_start = act["first"]
 
@@ -1362,6 +1436,14 @@ def lead_time_table(projects, df_period=None, period_end=None, pause_notes=None)
         work_end = report if done else max(start, open_until)
         waiting = (start - first).days
         working = (work_end - start).days
+
+        # The chart draws the bar itself as the *formal* record (Begining -> Closing Day,
+        # both Timesheet-fed), separately from the day-count math above (which stays on
+        # Final Report Sent, the real metric the medians are built on). admin_done mirrors
+        # `done` but keyed to Closing Day instead of the report, for that bar's own color.
+        closing_raw = p.get("Closing Day")
+        admin_done = pd.notna(closing_raw)
+        bar_end = closing_raw if admin_done else max(start, open_until)
 
         flag = ""
         if waiting < 0:
@@ -1386,22 +1468,36 @@ def lead_time_table(projects, df_period=None, period_end=None, pause_notes=None)
 
         tag_notes = pause_notes.get(tag, {})
         for g in gaps:
-            g["forgiven"] = bool(tag_notes.get(pause_key(g), {}).get("forgive"))
-        forgiven_days = sum(g["weeks"] * 7 for g in gaps if g["forgiven"])
-        working_counted = max(0, working - forgiven_days)
+            note = tag_notes.get(pause_key(g), {})
+            g["forgiven_working"] = bool(note.get("forgive_working"))
+            g["forgiven_total"] = bool(note.get("forgive_total"))
+            g["forgiven"] = g["forgiven_working"] or g["forgiven_total"]  # any forgiveness, for the chart
+        forgiven_days_working = sum(g["weeks"] * 7 for g in gaps if g["forgiven_working"])
+        forgiven_days_total = sum(g["weeks"] * 7 for g in gaps if g["forgiven_total"])
+        working_counted = max(0, working - forgiven_days_working)
+        working_counted_for_total = max(0, working - forgiven_days_total)
 
         rows.append({
             "Project tag": tag, "first_contact": first, "start": start,
             "work_end": work_end, "report": report if done else pd.NaT,
             "waiting_days": waiting, "working_days": working,
             "total_days": waiting + working, "done": done, "flag": flag,
+            # working_days_counted feeds "Typical time to deliver (effective working time)";
+            # total_days_counted feeds "Typical total turnaround to user" -- independently,
+            # since a pause can be forgiven from one, the other, both, or neither.
             "working_days_counted": working_counted,
-            "total_days_counted": waiting + working_counted,
+            "total_days_counted": waiting + working_counted_for_total,
             "real_start": real_start, "pre_log": pre_log,
-            # Register -> Closing Day is the span Timesheet tracks, which is neither of the two
-            # stages above: it starts at registration (after first contact) and runs past the
-            # report to the administrative close.
-            "register": p.get("Register Project"), "closing": p.get("Closing Day"),
+            "admin_done": admin_done, "bar_end": bar_end,
+            # Register -> Closing Day is the span Timesheet tracks, which is neither of the
+            # two stages above: it starts at registration (after first contact) and runs past
+            # the report to the administrative close. `closing` is the effective closing date
+            # (see effective_closing_date), used for that span's math; `closing_raw` is the
+            # tracker's actual Closing Day, kept separately so the chart can draw the
+            # formal/Timesheet bar (Begining -> Closing Day) on its own, apart from the
+            # real-dates math above.
+            "register": p.get("Register Project"), "closing": effective_closing.get(idx),
+            "closing_raw": closing_raw,
             "hours": float(hours_by_tag.get(tag, 0.0)),
             "description": (p.get("Short Description") if has_desc else None),
             "inherited": trigger == "Inherited Project",
@@ -1414,8 +1510,13 @@ def lead_time_table(projects, df_period=None, period_end=None, pause_notes=None)
 
 # --- Pause notes: why a project stopped ("waiting for user", ...), and whether to forgive
 # that pause -- excuse its days from the turnaround medians without excusing the rest of
-# the project. One pause can be explained without being forgiven (a note for context, but
-# the time still counts) or forgiven without a note (just the checkbox) -- either is valid.
+# the project. Forgiveness is tracked separately for the two medians it can feed --
+# "forgive_working" excuses it from Typical time to deliver (effective working time) only,
+# "forgive_total" excuses it from Typical total turnaround to user only -- since a pause
+# that shouldn't count as real work might still be time the user was genuinely waiting
+# through (and so should stay in), or vice versa. A pause can be explained without being
+# forgiven from either (a note for context, but the time still counts both places), or
+# forgiven from one, the other, or both, with or without a note.
 PAUSE_NOTES_PATH = DATA_DIR / "project_pause_notes.json"
 
 
@@ -1426,9 +1527,11 @@ def pause_key(gap):
 
 
 def load_pause_notes():
-    """{project: {gap-start ISO date: {"note": str, "forgive": bool}}}. Also reads the
-    older plain-string format (note only, never forgiven) from before "forgive" existed,
-    so nothing written under that version is lost."""
+    """{project: {gap-start ISO date: {"note": str, "forgive_working": bool,
+    "forgive_total": bool}}}. Also reads the two older formats so nothing written under
+    them is lost: the plain-string format from before "forgive" existed (note only), and
+    the single-"forgive" format from before it split in two (that one value, applied to
+    both -- the combination that reproduced the old behavior exactly)."""
     if not PAUSE_NOTES_PATH.exists():
         return {}
     try:
@@ -1438,25 +1541,32 @@ def load_pause_notes():
 
     def normalize(entry):
         if isinstance(entry, str):
-            return {"note": entry, "forgive": False}
-        return {"note": str(entry.get("note", "")), "forgive": bool(entry.get("forgive"))}
+            return {"note": entry, "forgive_working": False, "forgive_total": False}
+        if "forgive_working" in entry or "forgive_total" in entry:
+            return {"note": str(entry.get("note", "")),
+                    "forgive_working": bool(entry.get("forgive_working")),
+                    "forgive_total": bool(entry.get("forgive_total"))}
+        old = bool(entry.get("forgive"))
+        return {"note": str(entry.get("note", "")), "forgive_working": old, "forgive_total": old}
 
     return {str(proj): {str(k): normalize(v) for k, v in (notes or {}).items()}
             for proj, notes in data.items()}
 
 
 def save_pause_notes(notes):
-    """Persist pause notes, dropping an entry once it has neither a note nor "forgive"
-    ticked (nothing left to keep). Callers should guard with PermissionError like every
-    other save."""
+    """Persist pause notes, dropping an entry once it has neither a note nor either
+    "forgive" ticked (nothing left to keep). Callers should guard with PermissionError like
+    every other save."""
     cleaned = {}
     for proj, gap_notes in notes.items():
         kept = {}
         for key, entry in gap_notes.items():
             note = (entry.get("note") or "").strip()
-            forgive = bool(entry.get("forgive"))
-            if note or forgive:
-                kept[key] = {"note": note, "forgive": forgive}
+            forgive_working = bool(entry.get("forgive_working"))
+            forgive_total = bool(entry.get("forgive_total"))
+            if note or forgive_working or forgive_total:
+                kept[key] = {"note": note, "forgive_working": forgive_working,
+                             "forgive_total": forgive_total}
         if kept:
             cleaned[proj] = kept
     PAUSE_NOTES_PATH.write_text(json.dumps(cleaned, indent=2, ensure_ascii=False),
@@ -1468,8 +1578,9 @@ def lead_time_summary(lead_df):
     and internal projects (no external user waits on those, so they aren't turnaround --
     the chart still draws them, muted). The working/total medians use
     `working_days_counted` / `total_days_counted`, not the raw day counts, so a pause
-    ticked "forgive" (see load_pause_notes) doesn't inflate them. Each value is None when
-    nothing qualifies, so callers can show an em dash."""
+    ticked "forgive_working" / "forgive_total" (see load_pause_notes) doesn't inflate the
+    one(s) it was ticked for. Each value is None when nothing qualifies, so callers can
+    show an em dash."""
     clean = lead_df[lead_df["flag"] == ""] if len(lead_df) else lead_df
     if len(clean) and "internal" in clean.columns:
         clean = clean[~clean["internal"].fillna(False).astype(bool)]
@@ -1557,7 +1668,10 @@ def lead_time_effort(lead_df):
 
       median_timesheet    -- Register Project -> Closing Day, the span Timesheet tracks. Longer
                           than the delivery medians by design: it runs past the report to
-                          the administrative close.
+                          the administrative close. `closing` here is already the effective
+                          closing date (see effective_closing_date): if Final Report Sent
+                          trailed Closing Day, the report date is used instead, so a report
+                          logged after the tracker's close doesn't understate the span.
 
     Values are None when nothing qualifies, so callers can show an em dash."""
     clean = lead_df[lead_df["flag"] == ""] if len(lead_df) else lead_df

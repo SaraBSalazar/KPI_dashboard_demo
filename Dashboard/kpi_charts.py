@@ -149,35 +149,43 @@ def fig_week_hours_by_project(week_df, label, project_desc=None):
 
 
 def fig_hours_by_project_task(week_df, label, task_category, category_order, category_colors):
-    task_pivot = (
-        week_df.groupby(["Project", "Major task name (chart)"])["Hours (exact)"]
-        .sum().unstack("Major task name (chart)", fill_value=0)
-    )
+    """Stacked horizontal bar, one row per project, segmented by major task. A task that's
+    actually logged under more than one Category (e.g. "Tools" under both Projects and
+    Projects-Development) draws as adjacent sub-segments -- one per Category it genuinely
+    appears under for that project, each in
+    that Category's own color -- rather than the whole task being forced into a single
+    color via `task_category`'s one-task-one-category simplification (still used only to
+    decide the left-to-right *order* tasks stack in, so related tasks still cluster)."""
+    grouped = week_df.groupby(["Major task name (chart)", "Category", "Project"])["Hours (exact)"].sum()
     fig = go.Figure()
-    if len(task_pivot):
-        task_rank = pd.DataFrame({
-            "category_rank": task_category.reindex(task_pivot.columns).map(
-                {c: i for i, c in enumerate(category_order)}),
-            "hours": task_pivot.sum(axis=0),
-        }).sort_values(["category_rank", "hours"], ascending=[True, False])
-        task_order = task_rank.index
+    if len(grouped):
+        cat_rank = {c: i for i, c in enumerate(category_order)}
+        task_totals = grouped.groupby("Major task name (chart)").sum()
+        task_order = list(pd.DataFrame({
+            "category_rank": task_category.reindex(task_totals.index).map(cat_rank),
+            "hours": task_totals,
+        }).sort_values(["category_rank", "hours"], ascending=[True, False]).index)
 
-        project_order = task_pivot.sum(axis=1).sort_values(ascending=True).index
-        task_pivot = task_pivot.loc[project_order]
+        project_order = grouped.groupby("Project").sum().sort_values(ascending=True).index
+
         shown_categories = set()
-        for task in [t for t in task_order if t in task_pivot.columns]:
-            category = task_category[task]
-            first_of_category = category not in shown_categories
-            shown_categories.add(category)
-            fig.add_trace(go.Bar(
-                x=task_pivot[task], y=task_pivot.index, orientation="h",
-                name=category, legendgroup=category, showlegend=first_of_category,
-                marker=dict(color=category_colors[category], line=dict(color=TL_SURFACE, width=1)),
-                text=[task if v > 0 else "" for v in task_pivot[task]],
-                textposition="inside", insidetextanchor="middle", textfont=dict(color="white", size=9),
-                customdata=[format_hm(v) for v in task_pivot[task]],
-                hovertemplate=f"<b>{task}</b><br>" + "%{y}: %{customdata}<extra></extra>",
-            ))
+        for task in task_order:
+            task_slice = grouped.loc[task]  # index: (Category, Project)
+            cats_for_task = sorted(task_slice.index.get_level_values("Category").unique(),
+                                    key=lambda c: cat_rank.get(c, len(category_order)))
+            for category in cats_for_task:
+                values = task_slice.xs(category, level="Category").reindex(project_order, fill_value=0)
+                first_of_category = category not in shown_categories
+                shown_categories.add(category)
+                fig.add_trace(go.Bar(
+                    x=values.values, y=values.index, orientation="h",
+                    name=category, legendgroup=category, showlegend=first_of_category,
+                    marker=dict(color=category_colors[category], line=dict(color=TL_SURFACE, width=1)),
+                    text=[task if v > 0 else "" for v in values.values],
+                    textposition="inside", insidetextanchor="middle", textfont=dict(color="white", size=9),
+                    customdata=[format_hm(v) for v in values.values],
+                    hovertemplate=f"<b>{task}</b> — {category}<br>" + "%{y}: %{customdata}<extra></extra>",
+                ))
         fig.update_xaxes(visible=True)
     else:
         _empty(fig, "No hours logged yet for this week")
@@ -202,8 +210,11 @@ def fig_category_donut(cat_hours, title, empty_text):
             labels=cat_hours.index, values=cat_hours["hours"],
             hole=0.55, sort=False, rotation=90, direction="clockwise",
             marker=dict(colors=list(cat_hours["color"]), line=dict(color=TL_SURFACE, width=2)),
-            text=[f"{p:.0f}%" for p in pct],
-            textinfo="label+text", textposition="outside",
+            # Built by hand (textinfo="text") rather than "label+text", so a long category
+            # name (e.g. "Meetings (non-project)") can be wrapped -- plotly has no wrap
+            # option for the auto-rendered `label`.
+            text=[f"{_wrap_label(cat, 14)} ({p:.0f}%)" for cat, p in zip(cat_hours.index, pct)],
+            textinfo="text", textposition="outside",
             textfont=dict(color=TL_INK_SECONDARY, size=11),
             customdata=[format_hm(h) for h in cat_hours["hours"]],
             hovertemplate="<b>%{label}</b><br>%{customdata} (%{percent})<extra></extra>",
@@ -212,7 +223,7 @@ def fig_category_donut(cat_hours, title, empty_text):
                             showarrow=False, font=dict(size=15, color=TL_INK_PRIMARY))
     else:
         _empty(fig, empty_text)
-    fig.update_layout(**base_layout(title, width=560, height=560, bgcolor=TL_SURFACE, font_color=TL_INK_PRIMARY),
+    fig.update_layout(**base_layout(title, width=460, height=460, bgcolor=TL_SURFACE, font_color=TL_INK_PRIMARY),
                        showlegend=False)
     return fig
 
@@ -256,47 +267,51 @@ def change_delta(current_df, previous_df, group_col):
 
 # --- Month tab ----------------------------------------------------------------------------
 
-def fig_major_task_share_by_category(month_df, label, task_category, category_order, category_colors):
-    task_totals = month_df.groupby("Major task name (chart)")["Hours (exact)"].sum()
+def fig_major_task_share_by_category(month_df, label, category_order, category_colors):
+    """Donut of hours by major task, each wedge colored by Category. Wedges are grouped
+    into contiguous blocks by Category (all of one Category's wedges adjacent, in
+    category_order), with the biggest task leading each block -- rather than ordering by
+    task first, which would scatter a given Category's wedges across the ring wherever its
+    tasks happened to rank. A task logged under more than one Category (see
+    fig_hours_by_project_task) still draws as one wedge per Category it genuinely appears
+    under, each its own correct color and its own share of the total."""
+    grouped = month_df.groupby(["Major task name (chart)", "Category"])["Hours (exact)"].sum()
     fig = go.Figure()
-    legend_kwargs = dict(showlegend=False)
-    if len(task_totals):
-        task_order = pd.DataFrame({
-            "category_rank": task_category.reindex(task_totals.index).map(
-                {c: i for i, c in enumerate(category_order)}),
-            "hours": task_totals,
-        }).sort_values(["category_rank", "hours"], ascending=[True, False])
-        task_totals = task_order["hours"]
-        wedge_colors = [category_colors[task_category[t]] for t in task_totals.index]
-        total = task_totals.sum()
-        pct = task_totals / total * 100
+    if len(grouped):
+        cat_rank = {c: i for i, c in enumerate(category_order)}
+        rows = grouped.reset_index(name="hours")
+        rows["category_rank"] = rows["Category"].map(cat_rank).fillna(len(category_order))
+        rows = rows.sort_values(["category_rank", "hours"], ascending=[True, False])
+        tasks = rows["Major task name (chart)"].tolist()
+        categories = rows["Category"].tolist()
+        hours = rows["hours"].tolist()
+
+        total = sum(hours)
+        pct = [h / total * 100 for h in hours]
+        wedge_colors = [category_colors[c] for c in categories]
 
         fig.add_trace(go.Pie(
-            labels=task_totals.index, values=task_totals.values,
+            labels=tasks, values=hours,
             hole=0.55, sort=False, rotation=90, direction="clockwise",
             marker=dict(colors=wedge_colors, line=dict(color=TL_SURFACE, width=1.5)),
-            text=[f"{t} ({p:.0f}%)" for t, p in zip(task_totals.index, pct)],
+            text=[f"{_wrap_label(t, 14)} ({p:.0f}%)" for t, p in zip(tasks, pct)],
             textinfo="text", textposition="outside", textfont=dict(color=TL_INK_SECONDARY, size=10),
             showlegend=False,
-            customdata=[format_hm(h) for h in task_totals.values],
-            hovertemplate="<b>%{label}</b><br>%{customdata} (%{percent})<extra></extra>",
+            hovertext=[f"<b>{t}</b> — {c}<br>{format_hm(h)} ({p:.0f}%)"
+                       for t, c, h, p in zip(tasks, categories, hours, pct)],
+            hoverinfo="text",
         ))
         fig.add_annotation(text=f"<b>{format_hm(total)}</b><br>total", x=0.5, y=0.5, xref="paper", yref="paper",
                             showarrow=False, font=dict(size=15, color=TL_INK_PRIMARY))
-
-        used_categories = [c for c in category_order if c in set(task_category.reindex(task_totals.index))]
-        for cat in used_categories:
-            fig.add_trace(go.Bar(x=[None], y=[None], marker_color=category_colors[cat], name=cat))
-        legend_kwargs = dict(legend=dict(title=dict(text="Category"), x=1.02, y=1, xanchor="left"), margin=dict(r=160))
     else:
         _empty(fig, f"No hours logged yet for {label}")
 
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
     fig.update_layout(
-        **base_layout(f"Major-task share by category — {label}", width=900, height=680,
+        **base_layout(f"Major-task share by category — {label}", width=780, height=560,
                       bgcolor=TL_SURFACE, font_color=TL_INK_PRIMARY),
-        **legend_kwargs,
+        showlegend=False,
     )
     return fig
 
@@ -337,17 +352,26 @@ def fig_active_vs_concluded(active_projects, concluded_projects, label, project_
 # --- Year tab: time-log trend charts -------------------------------------------------------
 
 def fig_category_share_stacked(df_period, title, category_order, category_colors):
+    """100%-wide single stacked bar, one segment per Category. No legend -- instead, every
+    segment keeps its own label: big enough to hold "Category (NN%)" draws it inside,
+    anything narrower draws the same text just outside its own slice (plotly positions
+    "outside" text relative to each trace's own segment, not the bar as a whole, so a tiny
+    sliver still gets a legible label right next to it)."""
     category_totals = df_period.groupby("Category")["Hours (exact)"].sum().reindex(category_order).dropna()
     fig = go.Figure()
     if len(category_totals):
         category_pct = category_totals / category_totals.sum() * 100
         for cat in category_totals.index:
             pct = category_pct[cat]
+            inside = pct >= 6
             fig.add_trace(go.Bar(
                 y=[""], x=[pct], orientation="h", name=cat,
                 marker=dict(color=category_colors[cat], line=dict(color=TL_SURFACE, width=1)),
-                text=f"{cat} ({pct:.0f}%)" if pct >= 6 else "",
-                textposition="inside", insidetextanchor="middle", textfont=dict(color="white", size=11),
+                text=f"{cat} ({pct:.0f}%)",
+                textposition="inside" if inside else "outside",
+                insidetextanchor="middle",
+                textfont=dict(color="white" if inside else TL_INK_SECONDARY, size=11),
+                showlegend=False,
                 customdata=[format_hm(category_totals[cat])],
                 hovertemplate=f"<b>{cat}</b><br>%{{customdata}} (%{{x:.0f}}%)<extra></extra>",
             ))
@@ -358,12 +382,17 @@ def fig_category_share_stacked(df_period, title, category_order, category_colors
     fig.update_yaxes(visible=False)
     fig.update_layout(
         **base_layout(title, width=1000, height=220, bgcolor=TL_SURFACE, font_color=TL_INK_PRIMARY),
-        barmode="stack", showlegend=False, margin=dict(l=10, r=10, t=60, b=10),
+        barmode="stack", showlegend=False, margin=dict(l=10, r=40, t=60, b=10),
     )
     return fig
 
 
 def fig_major_task_share_stacked(df_period, title, task_category, category_order, category_colors):
+    """100%-wide single stacked bar, one segment per major task -- merged across Category
+    the same way fig_monthly_major_task_hours is (one task = one segment = one color via
+    `task_category`'s single-category-per-task rule), rather than split per Category like
+    fig_hours_by_project_task and fig_major_task_share_by_category. Keeps this one simple
+    and consistent with the Year tab's other by-month task view."""
     task_totals = df_period.groupby("Major task name (chart)")["Hours (exact)"].sum()
     fig = go.Figure()
     if len(task_totals):
@@ -385,19 +414,14 @@ def fig_major_task_share_stacked(df_period, title, task_category, category_order
                 customdata=[format_hm(task_totals[task])],
                 hovertemplate=f"<b>{task}</b><br>%{{customdata}} (%{{x:.0f}}%)<extra></extra>",
             ))
-        used_categories = [c for c in category_order if c in set(task_category.reindex(task_totals.index))]
-        for cat in used_categories:
-            fig.add_trace(go.Bar(x=[None], y=[None], marker_color=category_colors[cat], name=cat))
         fig.update_xaxes(visible=False, range=[0, 100])
-        legend_kwargs = dict(legend=dict(title=dict(text="Category"), x=1.02, y=1, xanchor="left"), margin=dict(r=160))
     else:
         _empty(fig, "No hours logged yet")
         fig.update_xaxes(visible=False)
-        legend_kwargs = dict(showlegend=False)
     fig.update_yaxes(visible=False)
     fig.update_layout(
         **base_layout(title, width=1000, height=250, bgcolor=TL_SURFACE, font_color=TL_INK_PRIMARY),
-        barmode="stack", **legend_kwargs,
+        barmode="stack", showlegend=False,
     )
     return fig
 
@@ -412,23 +436,22 @@ def _month_grouped_bar(pivot, bar_colors, title, y_title, extra_legend=None):
     fig = go.Figure()
     for i, month in enumerate(months_present):
         offset = (i - (n_months - 1) / 2) * bar_width
+        values = pivot[month].values
         fig.add_trace(go.Bar(
-            x=[xi + offset for xi in x], y=pivot[month].values, width=bar_width,
+            x=[xi + offset for xi in x], y=values, width=bar_width,
             marker=dict(color=bar_colors, opacity=month_alphas[i], line=dict(color=TL_SURFACE, width=1)),
             showlegend=False,
-            hovertext=[f"<b>{row}</b><br>{month}: {format_hm(v)}" for row, v in zip(pivot.index, pivot[month].values)],
+            text=[month[:3] if v > 0 else "" for v in values],
+            textposition="outside", textfont=dict(color=TL_INK_SECONDARY, size=9),
+            hovertext=[f"<b>{row}</b><br>{month}: {format_hm(v)}" for row, v in zip(pivot.index, values)],
             hoverinfo="text",
         ))
-    for i, month in enumerate(months_present):
-        fig.add_trace(go.Bar(x=[None], y=[None], marker=dict(color=TL_INK_MUTED, opacity=month_alphas[i]), name=month))
 
     fig.update_xaxes(tickvals=x, ticktext=list(pivot.index), tickangle=-30, showgrid=False)
     fig.update_yaxes(title_text=y_title, showgrid=True, gridcolor=TL_GRID)
     fig.update_layout(
         **base_layout(title, width=950, height=520, bgcolor=TL_SURFACE, font_color=TL_INK_PRIMARY),
-        barmode="overlay",
-        legend=dict(title=dict(text="Month"), x=1.02, y=1, xanchor="left"),
-        margin=dict(r=140),
+        barmode="overlay", showlegend=False,
     )
     return fig
 
@@ -470,24 +493,24 @@ def fig_monthly_major_task_hours(df_period, months_present, task_category, categ
     fig = go.Figure()
     for i, month in enumerate(present):
         offset = (i - (n_months - 1) / 2) * bar_height
+        values = task_month[month].values
         fig.add_trace(go.Bar(
-            y=[yi + offset for yi in y], x=task_month[month].values, orientation="h", width=bar_height,
+            y=[yi + offset for yi in y], x=values, orientation="h", width=bar_height,
             marker=dict(color=colors, opacity=month_alphas[i], line=dict(color=TL_SURFACE, width=1)),
             showlegend=False,
-            hovertext=[f"<b>{row}</b><br>{month}: {format_hm(v)}" for row, v in zip(task_month.index, task_month[month].values)],
+            text=[month[:3] if v > 0 else "" for v in values],
+            textposition="outside", textfont=dict(color=TL_INK_SECONDARY, size=9),
+            hovertext=[f"<b>{row}</b><br>{month}: {format_hm(v)}" for row, v in zip(task_month.index, values)],
             hoverinfo="text",
         ))
-    for i, month in enumerate(present):
-        fig.add_trace(go.Bar(x=[None], y=[None], marker=dict(color=TL_INK_MUTED, opacity=month_alphas[i]), name=month))
 
     fig.update_yaxes(tickvals=y, ticktext=list(task_month.index), showgrid=False, autorange="reversed")
     fig.update_xaxes(title_text="Hours", showgrid=True, gridcolor=TL_GRID)
-    height = 120 + n_tasks * max(32, 8 * n_months + 20)
+    height = 160 + n_tasks * max(38, 9 * n_months + 24)
     fig.update_layout(
-        **base_layout("Major-task hours by month", width=950, height=height, bgcolor=TL_SURFACE, font_color=TL_INK_PRIMARY),
-        barmode="overlay",
-        legend=dict(title=dict(text="Month"), x=1.02, y=1, xanchor="left"),
-        margin=dict(r=140, l=170),
+        **base_layout("Major-task hours by month", width=1100, height=height, bgcolor=TL_SURFACE, font_color=TL_INK_PRIMARY),
+        barmode="overlay", showlegend=False,
+        margin=dict(l=170),
     )
     return fig
 
@@ -615,8 +638,8 @@ def fig_received_vs_finished(projects, period_months, period_start, truncate_at)
     """`truncate_at` is the last period-month whose workload count is a settled fact
     (None to show every month, e.g. for a fully-closed past period). "Received" uses
     effective_received_date (kpi_data) rather than the raw Register Project column, so an
-    Inherited Project is attributed to the month work actually began for the person doing it, not its
-    original (pre-handoff) registration date -- which also means the period_start cutoff
+    Inherited Project is attributed to the month work actually began for the current owner,
+    not its original (pre-handoff) registration date -- which also means the period_start cutoff
     below is checked against that same effective date, not the raw one."""
     received_date = effective_received_date(projects)
     received = (
@@ -1059,27 +1082,39 @@ def fig_goals_at_a_glance(goals_df):
 MIN_BAR_SPAN = 0.012  # shortest drawn bar, as a fraction of the date range on screen
 
 
-def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
-    """One row per project on a date axis, split into the two stages that make up its
-    turnaround: waiting (first contact -> work started) and working (-> report sent, or
-    -> today while still running). With only a handful of projects a distribution would be
-    meaningless, so this shows every project individually -- and it still reads at 20+ rows.
-    Rows flagged as bad-date by lead_time_table are excluded (the caller reports them).
+def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None, period_start=None):
+    """One row per project on a date axis, split into two stages: waiting (first contact ->
+    work started) and working, the latter drawn as the *formal/Timesheet* record -- Begining ->
+    Closing Day, or -> today while not yet administratively closed (`bar_end`/`admin_done`
+    from kd.lead_time_table) -- since that's the record kept by others, not derived from the
+    personal time log. With only a handful of projects a distribution would be meaningless,
+    so this shows every project individually -- and it still reads at 20+ rows. Rows flagged
+    as bad-date by lead_time_table are excluded (the caller reports them).
     When the rows carry time-log `gaps` (see kd.lead_time_table), each pause is drawn as a
     gray segment over the working bar, with its note from `pause_notes`
-    ({project: {gap-start ISO: {"note", "forgive"}}}) in the tooltip -- so a
-    stopped-and-restarted project doesn't read as continuous work. A pause ticked
-    "forgive" is its own legend entry ("Paused (forgiven)") and draws hatched -- but the
-    same solid gray fill as a plain pause, not faded toward white the way Internal mutes
-    its (much more saturated) color, since lead_time_summary excuses its days from the
-    medians the same way. A `real_start` (first week with logged hours) draws as a
-    diamond on the row: when work *really* began, before or after the tracker's start.
+    ({project: {gap-start ISO: {"note", "forgive_working", "forgive_total"}}}) in the
+    tooltip -- so a stopped-and-restarted project doesn't read as continuous work. A pause
+    ticked forgiven from either median is its own legend entry ("Paused (forgiven)") and
+    draws hatched -- but the same solid gray fill as a plain pause, not faded toward white
+    the way Internal mutes its (much more saturated) color, since lead_time_summary
+    excuses its days from whichever median(s) it was forgiven for the same way. The
+    hovertext names which one(s), since a pause can now be forgiven from Typical time to
+    deliver (effective working time), Typical total turnaround to user, both, or neither.
+    The two *real* dates -- as opposed to the bar's formal ones -- draw as diamonds on the
+    row: a solid black diamond at `real_start` (first week with logged hours: when work
+    *really* began, before or after the tracker's Begining), and a hollow black diamond at
+    `report` (Final Report Sent: when the deliverable *really* went out, before or after
+    Closing Day). Hollow vs. solid marks end vs. start; both stay black since both are the
+    same kind of thing -- the real-world date -- next to the bar's formal one.
     Internal projects draw faded + hatched across both stages -- the same visual language
     as an inherited wait, in blue rather than orange -- because lead_time_summary leaves
     them out of the medians.
     Every hovertext also carries the project's `description` (Short Description), when set.
     A span too short to see at this zoom is widened to MIN_BAR_SPAN (tooltips keep the real
-    figure), so a project delivered in a day still shows up instead of vanishing."""
+    figure), so a project delivered in a day still shows up instead of vanishing.
+    Rows are ordered by Register Project, earliest first. `period_start` (the reporting
+    year's own 15 Oct boundary), when given and inside the drawn span, gets a dotted vline
+    alongside the dashed "today" one."""
     fig = go.Figure()
     clean = lead_df[lead_df["flag"] == ""] if len(lead_df) else lead_df
     if not len(clean):
@@ -1089,13 +1124,23 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
         fig.update_layout(**base_layout(title, width=950, height=240))
         return fig
 
-    clean = clean.sort_values("first_contact", ascending=False).copy()
+    # Earliest Register Project first (first_contact as a tiebreaker when two projects
+    # registered the same day) -- so the chart reads chronologically top-to-bottom rather
+    # than by whichever project happened to make first contact earliest.
+    clean = clean.sort_values(["register", "first_contact"], ascending=True).copy()
     ms = 86_400_000  # one day
+
+    # The chart's right edge: normally the latest bar_end (the formal bar), but the `report`
+    # diamond can sit past that when a report trailed Closing Day -- an anomaly, but the
+    # axis still has to stretch to it, or the marker draws off the visible range.
+    right_edge = clean["bar_end"].max() if "bar_end" in clean.columns else clean["work_end"].max()
+    if "report" in clean.columns and clean["report"].notna().any():
+        right_edge = max(right_edge, clean["report"].max())
 
     # Shortest bar the eye can still catch, in days -- taken as a fraction of the range the
     # chart actually covers rather than a fixed number of days, so it stays about the same
     # number of pixels whether what's on screen spans a year or a month.
-    span = max(1, (clean["work_end"].max() - clean["first_contact"].min()).days)
+    span = max(1, (right_edge - clean["first_contact"].min()).days)
     min_days = max(1.0, span * MIN_BAR_SPAN)
     today = pd.Timestamp.now().normalize()
 
@@ -1151,22 +1196,24 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
             hoverinfo="text",
         ))
 
-    for done, name, color in ((True, "Working (delivered)", FINISHED_COLOR),
-                              (False, "Working (ongoing)", RECEIVED_COLOR)):
-        sub = regular[regular["done"] == done]
+    bar_days = (clean["bar_end"] - clean["start"]).dt.days
+    for done, name, color in ((True, "Working (closed)", FINISHED_COLOR),
+                              (False, "Working (open)", RECEIVED_COLOR)):
+        sub = regular[regular["admin_done"] == done]
         if not len(sub):
             continue
+        sub_days = bar_days.loc[sub.index]
         fig.add_trace(go.Bar(
             y=[_wrap_label(t, 20) for t in sub["Project tag"]],
-            base=sub["start"], x=widths(sub["working_days"], keep_zero=False),
+            base=sub["start"], x=widths(sub_days, keep_zero=False),
             orientation="h", name=name,
             marker=dict(color=color, cornerradius=4, line=dict(color=TL_SURFACE, width=2)),
-            hovertext=[f"<b>{t}</b>{desc_line(desc)}<br>{'Delivered in' if done else 'Running for'} "
-                       f"{d} day{'' if d == 1 else 's'}<br>{s.strftime('%d %b %Y')} → "
-                       f"{e.strftime('%d %b %Y')}"
+            hovertext=[f"<b>{t}</b>{desc_line(desc)}<br>{'Closed in' if done else 'Open for'} "
+                       f"{d} day{'' if d == 1 else 's'} (Begining → Closing Day)<br>"
+                       f"{s.strftime('%d %b %Y')} → {e.strftime('%d %b %Y')}"
                        + ("" if done else (" (today)" if e == today else " (end of period)"))
-                       for t, desc, d, s, e in zip(sub["Project tag"], sub["description"], sub["working_days"],
-                                                    sub["start"], sub["work_end"])],
+                       for t, desc, d, s, e in zip(sub["Project tag"], sub["description"], sub_days,
+                                                    sub["start"], sub["bar_end"])],
             hoverinfo="text",
         ))
 
@@ -1174,11 +1221,12 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
     # trace carries the legend, because a zero-day wait draws nothing to hang it on.
     internal = clean[clean["_internal"]]
     if len(internal):
+        internal_bar_days = bar_days.loc[internal.index]
         for stage, base, days, end, keep_zero, legend in (
             ("Waiting", internal["first_contact"], internal["waiting_days"],
              internal["start"], True, False),
-            ("Working", internal["start"], internal["working_days"],
-             internal["work_end"], False, True),
+            ("Working", internal["start"], internal_bar_days,
+             internal["bar_end"], False, True),
         ):
             fig.add_trace(go.Bar(
                 y=[_wrap_label(t, 20) for t in internal["Project tag"]],
@@ -1195,17 +1243,23 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
             ))
 
     if "gaps" in clean.columns:
-        # A pause ticked "forgive" (see kd.load_pause_notes) draws hatched, as its own
-        # legend entry -- but still the same solid gray fill as a plain pause, not faded
-        # toward white the way Internal/Inherited mute their (much more saturated) colors:
-        # TL_BASELINE is already a pale, understated gray, so fading it further the same
-        # way would read as "this bar vanished," not "this bar is excused." The hatch
-        # lines alone are the signal here. "forgiven" is already computed per-gap by
-        # kd.lead_time_table, so this only needs the note text for the tooltip.
+        # A pause ticked "forgive_working" and/or "forgive_total" (see kd.load_pause_notes)
+        # draws hatched, as its own legend entry -- but still the same solid gray fill as a
+        # plain pause, not faded toward white the way Internal/Inherited mute their (much
+        # more saturated) colors: TL_BASELINE is already a pale, understated gray, so fading
+        # it further the same way would read as "this bar vanished," not "this bar is
+        # excused." The hatch lines alone are the signal here. `forgiven`/`forgiven_working`/
+        # `forgiven_total` are already computed per-gap by kd.lead_time_table; the hover
+        # names which median(s) it's actually excused from, since the two can now differ.
         gaps_by_state = {False: [], True: []}
         for _, r in clean.iterrows():
             for g in (r["gaps"] or []):
                 forgiven = bool(g.get("forgiven"))
+                fw, ft = bool(g.get("forgiven_working")), bool(g.get("forgiven_total"))
+                excused = (", ".join(filter(None, [
+                               "effective working time" if fw else "",
+                               "total turnaround to user" if ft else "",
+                           ])))
                 note = (pause_notes or {}).get(r["Project tag"], {}).get(
                     g["start"].date().isoformat(), {}).get("note", "")
                 text = (f"<b>{r['Project tag']}</b>{desc_line(r.get('description'))}<br>"
@@ -1213,7 +1267,7 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
                         f"{'' if g['weeks'] == 1 else 's'} — no hours logged<br>"
                         f"{g['start'].strftime('%d %b %Y')} → {g['end'].strftime('%d %b %Y')}"
                         + (f"<br><i>{note}</i>" if note else "")
-                        + ("<br><i>Forgiven — not counted in the medians</i>" if forgiven else ""))
+                        + (f"<br><i>Forgiven from: {excused}</i>" if forgiven else ""))
                 gaps_by_state[forgiven].append(
                     (_wrap_label(r["Project tag"], 20), g["start"], g["weeks"] * 7 * ms, text))
 
@@ -1232,24 +1286,61 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
     if "real_start" in clean.columns:
         sub = clean[clean["real_start"].notna()]
         if len(sub):
+            pre_log_col = sub["pre_log"] if "pre_log" in sub.columns else pd.Series(False, index=sub.index)
             deltas = [(rs - s).days for rs, s in zip(sub["real_start"], sub["start"])]
+            hovertext = []
+            for t, rs, d, pl in zip(sub["Project tag"], sub["real_start"], deltas, pre_log_col):
+                if pl:
+                    # No log evidence reaches this far back -- real_start is the tracker's
+                    # own Begining, a known date rather than one measured from hours logged.
+                    hovertext.append(f"<b>{t}</b><br>Already underway by {rs.strftime('%d %b %Y')} "
+                                      "(the tracker's Begining) -- before the time log began, "
+                                      "so there's no earlier evidence to show")
+                else:
+                    hovertext.append(f"<b>{t}</b><br>First hours logged in the week of "
+                                      f"{rs.strftime('%d %b %Y')}<br>"
+                                      + ("same week as the tracker's start" if abs(d) < 7 else
+                                         f"{abs(d)} days {'before' if d < 0 else 'after'} the tracker's start"))
             fig.add_trace(go.Scatter(
                 x=sub["real_start"], y=[_wrap_label(t, 20) for t in sub["Project tag"]],
                 mode="markers", name="Really working (time log)",
                 marker=dict(symbol="diamond", size=11, color=TL_INK_PRIMARY,
                             line=dict(color=TL_SURFACE, width=1.5)),
-                hovertext=[f"<b>{t}</b><br>First hours logged in the week of "
-                           f"{rs.strftime('%d %b %Y')}<br>"
-                           + ("same week as the tracker's start" if abs(d) < 7 else
-                              f"{abs(d)} days {'before' if d < 0 else 'after'} the tracker's start")
-                           for t, rs, d in zip(sub["Project tag"], sub["real_start"], deltas)],
+                hovertext=hovertext,
                 hoverinfo="text",
             ))
+
+    if "report" in clean.columns:
+        sub = clean[clean["report"].notna()]
+        if len(sub):
+            deltas = [((r - c).days if pd.notna(c) else None)
+                      for r, c in zip(sub["report"], sub["closing_raw"])]
+            fig.add_trace(go.Scatter(
+                x=sub["report"], y=[_wrap_label(t, 20) for t in sub["Project tag"]],
+                mode="markers", name="Final report sent (real)",
+                marker=dict(symbol="diamond-open", size=11, color=TL_INK_PRIMARY,
+                            line=dict(color=TL_INK_PRIMARY, width=2)),
+                hovertext=[f"<b>{t}</b><br>Final report sent: {r.strftime('%d %b %Y')}"
+                           + ("" if d is None else
+                              "<br>Same day as Closing Day" if d == 0 else
+                              f"<br>{abs(d)} day{'' if abs(d) == 1 else 's'} "
+                              f"{'before' if d < 0 else 'after'} Closing Day")
+                           for t, r, d in zip(sub["Project tag"], sub["report"], deltas)],
+                hoverinfo="text",
+            ))
+
+    # The reporting year's own start (15 Oct) -- only when it actually falls inside the
+    # span being drawn, same reasoning as "today" below.
+    if period_start is not None and clean["first_contact"].min() <= period_start <= right_edge:
+        fig.add_vline(x=period_start, line=dict(color=TL_BASELINE, width=1, dash="dot"))
+        fig.add_annotation(x=period_start, y=1.02, yref="paper",
+                           text=period_start.strftime("%d %b"), showarrow=False,
+                           font=dict(color=TL_INK_MUTED, size=11), yanchor="bottom")
 
     # "today" only belongs here while it falls inside the span being drawn. For a closed
     # reporting period it sits months to the right, and marking it would stretch the axis
     # out past the period just to label a date the review doesn't cover.
-    if clean["first_contact"].min() <= today <= clean["work_end"].max():
+    if clean["first_contact"].min() <= today <= right_edge:
         fig.add_vline(x=today, line=dict(color=TL_BASELINE, width=1, dash="dash"))
         fig.add_annotation(x=today, y=1.02, yref="paper", text="today", showarrow=False,
                            font=dict(color=TL_INK_MUTED, size=11), yanchor="bottom")
@@ -1262,7 +1353,7 @@ def fig_lead_time_stages(lead_df, title="Project turnaround", pause_notes=None):
     # period end) that padding reads as calendar the review doesn't cover.
     left_pad = pd.Timedelta(days=max(2, round(span * 0.02)))
     fig.update_xaxes(type="date", showgrid=True, gridcolor=TL_GRID, tickformat="%d %b",
-                     range=[clean["first_contact"].min() - left_pad, clean["work_end"].max()])
+                     range=[clean["first_contact"].min() - left_pad, right_edge])
     fig.update_yaxes(showgrid=False, tickfont=dict(size=12, color=TL_INK_SECONDARY))
     fig.update_layout(
         **base_layout(title, width=950, height=max(260, 120 + 34 * len(clean))),

@@ -34,12 +34,21 @@ h2, h3 {{ font-weight: 650 !important; letter-spacing: -0.01em; }}
   border-radius: 12px;
   padding: 0.85rem 1.1rem;
 }}
+/* Long titles (several tiles run two or three words past what the column can show in one
+   line) wrap instead of truncating with an ellipsis -- unreadable beats ugly. */
+[data-testid="stMetricLabel"] {{
+  overflow: visible;
+}}
 [data-testid="stMetricLabel"] p {{
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: {t['ink3']};
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-overflow: clip;
+  overflow: visible;
 }}
 [data-testid="stMetricValue"] {{
   font-family: "IBM Plex Mono", ui-monospace, monospace;
